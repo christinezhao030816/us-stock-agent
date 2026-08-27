@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>美股多 Agent 分析系统</title>
+
+    <style>
+        :root {
+            --background: #f4f7fb;
+            --surface: #ffffff;
+            --text: #172033;
+            --muted: #64748b;
+            --border: #dbe3ef;
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --success: #15803d;
+            --danger: #b91c1c;
+            --shadow: 0 18px 50px rgba(30, 64, 175, 0.10);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            color: var(--text);
+            background:
+                radial-gradient(
+                    circle at top right,
+                    #dbeafe 0,
+                    transparent 35%
+                ),
+                var(--background);
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }
+
+        .page {
+            width: min(1100px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 40px 0 64px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .brand-label {
+            margin: 0 0 8px;
+            color: var(--primary);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(30px, 5vw, 48px);
+            line-height: 1.1;
+        }
+
+        .subtitle {
+            margin: 12px 0 0;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.8);
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #94a3b8;
+        }
+
+        .status.online .status-dot {
+            background: #22c55e;
+            box-shadow: 0 0 0 4px #dcfce7;
+        }
+
+        .panel {
+            padding: 28px;
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: var(--shadow);
+        }
+
+        .search-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        input {
+            width: 100%;
+            height: 52px;
+            padding: 0 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text);
+            background: #ffffff;
+            font-size: 18px;
+            text-transform: uppercase;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px #dbeafe;
+        }
+
+        button {
+            align-self: end;
+            height: 52px;
+            padding: 0 24px;
+            border: 0;
+            border-radius: 12px;
+            color: white;
+            background: var(--primary);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--primary-dark);
+        }
+
+        button:disabled {
+            cursor: wait;
+            opacity: 0.65;
+        }
+
+        .agent-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .agent-card {
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: #f8fafc;
+        }
+
+        .agent-card strong {
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .agent-card span {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .message {
+            display: none;
+            margin-top: 20px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            line-height: 1.6;
+        }
+
+        .message.loading {
+            display: block;
+            color: #1e40af;
+            background: #eff6ff;
+        }
+
+        .message.error {
+            display: block;
+            color: var(--danger);
+            background: #fef2f2;
+        }
+
+        .report-panel {
+            display: none;
+            margin-top: 24px;
+        }
+
+        .report-panel.visible {
+            display: block;
+        }
+
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 22px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .report-header h2 {
+            margin: 0;
+        }
+
+        .report-meta {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .report-content {
+            line-height: 1.8;
+        }
+
+        .report-content h2,
+        .report-content h3 {
+            margin: 28px 0 10px;
+        }
+
+        .report-content p {
+            margin: 8px 0;
+        }
+
+        .report-content ul,
+        .report-content ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+
+        .report-content a {
+            color: var(--primary);
+            overflow-wrap: anywhere;
+        }
+
+        .footer-note {
+            margin-top: 22px;
+            color: var(--muted);
+            font-size: 13px;
+            text-align: center;
+        }
+
+        @media (max-width: 720px) {
+            .header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .search-row,
+            .agent-grid {
+                grid-template-columns: 1fr;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .panel {
+                padding: 20px;
+            }
+        }
+        /* 纵向模块化报告样式 */
+        .report-panel {
+            padding: 0;
+            background: transparent;
+            border: 0;
+            box-shadow: none;
+        }
+
+        .report-header {
+            padding: 34px 40px;
+            margin-bottom: 20px;
+            background: #ffffff;
+            border: 1px solid #d8e2f0;
+            border-radius: 24px;
+            box-shadow: 0 12px 34px rgba(39, 75, 135, 0.08);
+        }
+
+        .report-content {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .report-module {
+            width: 100%;
+            padding: 32px 40px;
+            background: #ffffff;
+            border: 1px solid #d8e2f0;
+            border-radius: 22px;
+            box-shadow: 0 10px 30px rgba(39, 75, 135, 0.06);
+        }
+
+        .report-module-header {
+            margin: 0 0 22px;
+            padding-bottom: 17px;
+            color: #111a2e;
+            border-bottom: 1px solid #dce5f2;
+            font-size: 24px;
+            font-weight: 750;
+            line-height: 1.35;
+        }
+
+        .report-module-body {
+            color: #26334b;
+            font-size: 16px;
+            line-height: 1.85;
+        }
+
+        .report-module-body h3 {
+            margin: 26px 0 12px;
+            color: #111a2e;
+            font-size: 18px;
+        }
+
+        .report-module-body p {
+            margin: 0 0 15px;
+        }
+
+        .report-module-body ul,
+        .report-module-body ol {
+            margin: 10px 0 18px;
+            padding-left: 26px;
+        }
+
+        .report-module-body li {
+            margin: 8px 0;
+        }
+
+        .report-module-body a {
+            color: #2768e8;
+            text-decoration-thickness: 1px;
+            text-underline-offset: 3px;
+            overflow-wrap: anywhere;
+        }
+
+        .report-module-body blockquote {
+            margin: 16px 0;
+            padding: 13px 17px;
+            color: #53627c;
+            background: #f3f7fd;
+            border-left: 4px solid #2c6bed;
+            border-radius: 0 10px 10px 0;
+        }
+
+        .report-module-body hr {
+            margin: 22px 0;
+            border: 0;
+            border-top: 1px solid #dce5f2;
+        }
+
+        .report-table-wrap {
+            margin: 18px 0;
+            overflow-x: auto;
+            border: 1px solid #dce5f2;
+            border-radius: 12px;
+        }
+
+        .report-table {
+            width: 100%;
+            min-width: 540px;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .report-table th,
+        .report-table td {
+            padding: 11px 14px;
+            text-align: left;
+            border-bottom: 1px solid #e2e9f3;
+        }
+
+        .report-table th {
+            color: #ffffff;
+            background: #18233a;
+        }
+
+        .report-table tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .report-disclaimer {
+            margin: 24px 10px 0;
+            color: #75839a;
+            text-align: center;
+            font-size: 12px;
+            line-height: 1.65;
+        }
+
+        @media (max-width: 700px) {
+            .report-header,
+            .report-module {
+                padding: 24px 20px;
+                border-radius: 17px;
+            }
+
+            .report-module-header {
+                font-size: 20px;
+            }
+
+            .report-module-body {
+                font-size: 15px;
+            }
+        }    
+</style>
+</head>
+
+<body>
+    <main class="page">
+        <header class="header">
+            <div>
+                <p class="brand-label">US Stock Agent</p>
+                <h1>美股多 Agent 分析系统</h1>
+                <p class="subtitle">
+                    汇总技术面、基本面和消息面数据，
+                    生成带有风险提示的综合分析。
+                </p>
+            </div>
+
+            <div class="status" id="apiStatus">
+                <span class="status-dot"></span>
+                <span id="apiStatusText">正在检查后端</span>
+            </div>
+        </header>
+
+        <section class="panel">
+            <form id="analysisForm">
+                <label for="symbolInput">输入美股代码</label>
+
+                <div class="search-row">
+                    <input
+                        id="symbolInput"
+                        name="symbol"
+                        value="AAPL"
+                        maxlength="10"
+                        autocomplete="off"
+                        required
+                    >
+
+                    <button id="analyzeButton" type="submit">
+                        开始分析
+                    </button>
+                </div>
+            </form>
+
+            <div class="agent-grid">
+                <div class="agent-card">
+                    <strong>技术面 Agent</strong>
+                    <span>均线、RSI、动量和波动率</span>
+                </div>
+
+                <div class="agent-card">
+                    <strong>基本面 Agent</strong>
+                    <span>SEC财报、盈利能力和资本结构</span>
+                </div>
+
+                <div class="agent-card">
+                    <strong>消息面 Agent</strong>
+                    <span>近期新闻、相关性和潜在影响</span>
+                </div>
+            </div>
+
+            <div
+                class="message"
+                id="message"
+                aria-live="polite"
+            ></div>
+        </section>
+
+        <section class="panel report-panel" id="reportPanel">
+            <div class="report-header">
+                <h2 id="reportTitle">综合分析报告</h2>
+                <span class="report-meta" id="reportMeta"></span>
+            </div>
+
+            <article
+                class="report-content"
+                id="reportContent"
+            ></article>
+        </section>
+
+        <p class="footer-note">
+            数据可能存在延迟。分析结果仅供研究，不构成投资建议。
+        </p>
+    </main>
+
+    <script>
+        const form = document.getElementById("analysisForm");
+        const input = document.getElementById("symbolInput");
+        const button = document.getElementById("analyzeButton");
+        const message = document.getElementById("message");
+        const reportPanel = document.getElementById("reportPanel");
+        const reportTitle = document.getElementById("reportTitle");
+        const reportMeta = document.getElementById("reportMeta");
+        const reportContent = document.getElementById("reportContent");
+        const apiStatus = document.getElementById("apiStatus");
+        const apiStatusText = document.getElementById(
+            "apiStatusText"
+        );
+
+        function escapeHtml(value) {
+            return value
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function formatInline(value) {
+            return value
+                .replace(
+                    /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+                    '<a href="$2" target="_blank" rel="noopener">$1</a>'
+                )
+                .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+        }
+
+        function renderReport(text) {
+            const lines = String(text || "")
+                .replace(/\r/g, "")
+                .split("\n");
+
+            const sections = [];
+            const disclaimerParts = [];
+
+            let currentSection = null;
+            let listType = null;
+
+            function renderInline(value) {
+                let safe = escapeHtml(value);
+
+                safe = safe.replace(
+                    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+                    '<a href="$2" target="_blank" '
+                    + 'rel="noopener noreferrer">$1</a>'
+                );
+
+                safe = safe.replace(
+                    /\*\*(.+?)\*\*/g,
+                    "<strong>$1</strong>"
+                );
+
+                safe = safe.replace(
+                    /`([^`]+)`/g,
+                    "<code>$1</code>"
+                );
+
+                return safe;
+            }
+
+            function cleanHeading(value) {
+                return String(value)
+                    .replace(/^[#\s]+/, "")
+                    .replace(
+                        /^(?:第\s*)?\d+\s*[.、:：]\s*/,
+                        ""
+                    )
+                    .trim();
+            }
+
+            function ensureSection() {
+                if (!currentSection) {
+                    currentSection = {
+                        title: "报告概览",
+                        content: [],
+                    };
+                }
+            }
+
+            function closeList() {
+                if (!currentSection || !listType) {
+                    return;
+                }
+
+                currentSection.content.push(
+                    listType === "ul" ? "</ul>" : "</ol>"
+                );
+
+                listType = null;
+            }
+
+            function finishSection() {
+                if (!currentSection) {
+                    return;
+                }
+
+                closeList();
+
+                if (
+                    currentSection.title
+                    || currentSection.content.length > 0
+                ) {
+                    sections.push(currentSection);
+                }
+
+                currentSection = null;
+            }
+
+            function startSection(title) {
+                finishSection();
+
+                currentSection = {
+                    title: cleanHeading(title) || "未命名模块",
+                    content: [],
+                };
+            }
+
+            function openList(type) {
+                ensureSection();
+
+                if (listType === type) {
+                    return;
+                }
+
+                closeList();
+                currentSection.content.push(
+                    type === "ul" ? "<ul>" : "<ol>"
+                );
+                listType = type;
+            }
+
+            function renderTable(tableLines) {
+                const rows = tableLines
+                    .map((line) => {
+                        return line
+                            .trim()
+                            .replace(/^\|/, "")
+                            .replace(/\|$/, "")
+                            .split("|")
+                            .map((cell) => cell.trim());
+                    })
+                    .filter((row) => {
+                        return !row.every((cell) => {
+                            return /^:?-{3,}:?$/.test(cell);
+                        });
+                    });
+
+                if (rows.length === 0) {
+                    return "";
+                }
+
+                const header = rows[0];
+                const body = rows.slice(1);
+
+                let html =
+                    '<div class="report-table-wrap">'
+                    + '<table class="report-table">'
+                    + "<thead><tr>";
+
+                for (const cell of header) {
+                    html += `<th>${renderInline(cell)}</th>`;
+                }
+
+                html += "</tr></thead><tbody>";
+
+                for (const row of body) {
+                    html += "<tr>";
+
+                    for (const cell of row) {
+                        html += `<td>${renderInline(cell)}</td>`;
+                    }
+
+                    html += "</tr>";
+                }
+
+                html += "</tbody></table></div>";
+                return html;
+            }
+
+            for (
+                let index = 0;
+                index < lines.length;
+                index += 1
+            ) {
+                const originalLine = lines[index];
+                const trimmed = originalLine.trim();
+
+                if (!trimmed) {
+                    closeList();
+                    continue;
+                }
+
+                if (/^[-_*]{3,}$/.test(trimmed)) {
+                    closeList();
+                    continue;
+                }
+
+                if (
+                    /不构成.{0,8}投资建议/.test(trimmed)
+                    || /仅供.{0,8}(参考|研究)/.test(trimmed)
+                ) {
+                    disclaimerParts.push(
+                        renderInline(
+                            trimmed
+                                .replace(/^[-*•]\s*/, "")
+                                .replace(/^>\s*/, "")
+                        )
+                    );
+                    continue;
+                }
+
+                const headingMatch = trimmed.match(
+                    /^(#{1,6})\s*(.+)$/
+                );
+
+                if (headingMatch) {
+                    const level = headingMatch[1].length;
+                    const title = headingMatch[2];
+
+                    if (level <= 2) {
+                        startSection(title);
+                    } else {
+                        ensureSection();
+                        closeList();
+
+                        currentSection.content.push(
+                            `<h3>${renderInline(
+                                cleanHeading(title)
+                            )}</h3>`
+                        );
+                    }
+
+                    continue;
+                }
+
+                if (
+                    trimmed.startsWith("|")
+                    && trimmed.endsWith("|")
+                ) {
+                    ensureSection();
+                    closeList();
+
+                    const tableLines = [];
+
+                    while (
+                        index < lines.length
+                        && lines[index].trim().startsWith("|")
+                        && lines[index].trim().endsWith("|")
+                    ) {
+                        tableLines.push(lines[index]);
+                        index += 1;
+                    }
+
+                    index -= 1;
+
+                    currentSection.content.push(
+                        renderTable(tableLines)
+                    );
+
+                    continue;
+                }
+
+                const bulletMatch = trimmed.match(
+                    /^[-*•]\s+(.+)$/
+                );
+
+                if (bulletMatch) {
+                    openList("ul");
+
+                    currentSection.content.push(
+                        `<li>${renderInline(
+                            bulletMatch[1]
+                        )}</li>`
+                    );
+
+                    continue;
+                }
+
+                const numberedMatch = trimmed.match(
+                    /^\d+\s*[.)、]\s*(.+)$/
+                );
+
+                if (numberedMatch) {
+                    ensureSection();
+                    closeList();
+
+                    currentSection.content.push(
+                        `<h3>${renderInline(
+                            numberedMatch[1]
+                        )}</h3>`
+                    );
+
+                    continue;
+                }
+
+                if (trimmed.startsWith(">")) {
+                    ensureSection();
+                    closeList();
+
+                    currentSection.content.push(
+                        `<blockquote>${renderInline(
+                            trimmed.replace(/^>\s?/, "")
+                        )}</blockquote>`
+                    );
+
+                    continue;
+                }
+
+                ensureSection();
+                closeList();
+
+                currentSection.content.push(
+                    `<p>${renderInline(trimmed)}</p>`
+                );
+            }
+
+            finishSection();
+
+            const wrapperPattern =
+                /^[A-Z0-9.-]+\s*综合分析(?:报告)?$/i;
+
+            const visibleSections = [];
+            const disclaimerSections = [];
+
+            for (const section of sections) {
+                if (wrapperPattern.test(section.title)) {
+                    continue;
+                }
+
+                if (/免责声明/.test(section.title)) {
+                    disclaimerSections.push(
+                        section.content.join("")
+                    );
+                    continue;
+                }
+
+                visibleSections.push(section);
+            }
+
+            let html = "";
+
+            for (
+                let index = 0;
+                index < visibleSections.length;
+                index += 1
+            ) {
+                const section = visibleSections[index];
+                const number = index + 1;
+
+                html += `
+                    <section class="report-module">
+                        <h2 class="report-module-header">
+                            ${number}. ${renderInline(
+                                section.title
+                            )}
+                        </h2>
+
+                        <div class="report-module-body">
+                            ${section.content.join("")}
+                        </div>
+                    </section>
+                `;
+            }
+
+            const disclaimerText =
+                disclaimerParts.length > 0
+                    ? disclaimerParts.join(" ")
+                    : "本页面内容仅用于信息整理和研究，"
+                      + "不构成投资建议。";
+
+            html += `
+                <p class="report-disclaimer">
+                    ${disclaimerText}
+                    ${disclaimerSections.join(" ")}
+                </p>
+            `;
+
+            return html;
+        }
+        async function checkHealth() {
+            try {
+                const response = await fetch("/health");
+
+                if (!response.ok) {
+                    throw new Error("后端不可用");
+                }
+
+                apiStatus.classList.add("online");
+                apiStatusText.textContent = "后端已连接";
+            } catch {
+                apiStatus.classList.remove("online");
+                apiStatusText.textContent = "后端未连接";
+            }
+        }
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            const symbol = input.value.trim().toUpperCase();
+            const symbolPattern = /^[A-Z0-9.-]{1,10}$/;
+
+            if (!symbolPattern.test(symbol)) {
+                message.className = "message error";
+                message.textContent = "请输入正确的美股代码。";
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = "分析中";
+            reportPanel.classList.remove("visible");
+            message.className = "message loading";
+
+            const startedAt = Date.now();
+
+            const timer = setInterval(() => {
+                const seconds = Math.floor(
+                    (Date.now() - startedAt) / 1000
+                );
+
+                message.textContent =
+                    `多个 Agent 正在分析 ${symbol}，` +
+                    `已等待 ${seconds} 秒……`;
+            }, 1000);
+
+            try {
+                const response = await fetch("/analyze", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ symbol })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.detail || "分析请求失败"
+                    );
+                }
+
+                const elapsedSeconds = Math.floor(
+                    (Date.now() - startedAt) / 1000
+                );
+
+                reportTitle.textContent =
+                    `${data.symbol} 综合分析报告`;
+                reportMeta.textContent =
+                    `用时 ${elapsedSeconds} 秒`;
+                reportContent.innerHTML =
+                    renderReport(data.report);
+
+                message.className = "message";
+                reportPanel.classList.add("visible");
+                reportPanel.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                });
+            } catch (error) {
+                message.className = "message error";
+                message.textContent =
+                    `分析失败：${error.message}`;
+            } finally {
+                clearInterval(timer);
+                button.disabled = false;
+                button.textContent = "开始分析";
+            }
+        });
+
+        checkHealth();
+    </script>
+</body>
+</html>
