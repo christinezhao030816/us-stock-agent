@@ -1,6 +1,7 @@
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 from agents import Runner
 from fastapi import FastAPI, HTTPException, Response
@@ -16,6 +17,11 @@ static_directory = project_directory / "static"
 sys.path.insert(0, str(agent_directory))
 
 from strategist_agent import strategist_agent
+from tools.agent_status import (
+    extract_top_level_statuses,
+    extract_top_level_technical_evidence,
+    warnings_from_statuses,
+)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +62,9 @@ class AnalysisRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     symbol: str
     report: str
+    agent_statuses: dict[str, dict[str, Any]]
+    warnings: list[str]
+    technical_evidence: dict[str, Any] | None = None
 
 
 @app.get("/", include_in_schema=False)
@@ -105,10 +114,17 @@ async def analyze_stock(request: AnalysisRequest) -> AnalysisResponse:
 
     try:
         result = await Runner.run(strategist_agent, prompt)
+        agent_statuses = extract_top_level_statuses(result)
+        technical_evidence = extract_top_level_technical_evidence(
+            result
+        )
 
         return AnalysisResponse(
             symbol=symbol,
             report=result.final_output,
+            agent_statuses=agent_statuses,
+            warnings=warnings_from_statuses(agent_statuses),
+            technical_evidence=technical_evidence,
         )
 
     except Exception:

@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from tools.filing_tool import get_recent_sec_filings
+from tools.ticker_symbols import canonicalize_symbol, ticker_mapping
 
 
 load_dotenv()
@@ -200,7 +201,8 @@ def get_recent_sec_filing_texts(
 ) -> dict[str, Any]:
     """读取近期SEC重大事项申报的主文件和EX-99附件正文。"""
 
-    symbol = symbol.upper().strip()
+    symbol = canonicalize_symbol(symbol)
+    symbols = ticker_mapping(symbol)
     filing_limit = max(1, min(filing_limit, 5))
 
     max_characters_per_document = max(
@@ -312,6 +314,8 @@ def get_recent_sec_filing_texts(
 
     return {
         "symbol": symbol,
+        "source_symbol": symbols["sec"],
+        "symbol_mapping": symbols,
         "company": metadata.get("company"),
         "analysis_time_utc": metadata.get(
             "analysis_time_utc"

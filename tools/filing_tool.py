@@ -5,6 +5,12 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from tools.ticker_symbols import (
+    canonicalize_symbol,
+    sec_symbol,
+    ticker_mapping,
+)
+
 
 load_dotenv()
 
@@ -65,7 +71,7 @@ def _get_json(url: str) -> dict:
 
 def _get_company(symbol: str) -> dict:
     companies = _get_json(SEC_TICKERS_URL)
-    symbol = symbol.upper().strip()
+    symbol = sec_symbol(symbol)
 
     for company in companies.values():
         if str(company.get("ticker", "")).upper() == symbol:
@@ -106,7 +112,8 @@ def get_recent_sec_filings(
 ) -> dict[str, Any]:
     """获取目标公司最近的8-K或6-K重大事项申报。"""
 
-    symbol = symbol.upper().strip()
+    symbol = canonicalize_symbol(symbol)
+    symbols = ticker_mapping(symbol)
     lookback_days = max(1, min(lookback_days, 365))
     limit = max(1, min(limit, 20))
 
@@ -270,6 +277,8 @@ def get_recent_sec_filings(
 
     return {
         "symbol": symbol,
+        "source_symbol": symbols["sec"],
+        "symbol_mapping": symbols,
         "company": submissions.get("name"),
         "cik": cik_padded,
         "analysis_time_utc": now.isoformat(),

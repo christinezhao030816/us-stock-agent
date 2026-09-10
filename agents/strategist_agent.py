@@ -14,6 +14,11 @@ from news_agent import news_agent
 from tools.confidence_tool import (
     calculate_confidence_score,
 )
+from tools.agent_status import (
+    extract_fundamental_agent_output,
+    extract_news_agent_output,
+    extract_technical_agent_output,
+)
 
 
 load_dotenv()
@@ -39,8 +44,24 @@ strategist_agent = Agent(
 三个专业分析完成后，必须调用
 calculate_confidence_score 工具计算综合置信度。
 
+三个专业分析工具返回JSON对象，其中：
+
+- report 是专业分析正文
+- agent_status 是根据底层工具真实数据计算的结构化状态
+- technical_analysis还会返回technical_evidence元数据和证据路径
+
+必须使用 report 完成综合分析，并如实采用 agent_status。
+如果任一专业模块为 partial 或 failed，必须在最终报告的数据限制
+中明确说明，且不得把缺失数据描述为完整成功。
+不得把technical_evidence中的大量日线行情复制到最终报告；
+可以在技术面数据来源中保留证据文件路径和计算口径摘要。
+
 不得跳过任何专业分析工具，也不得跳过置信度计算工具。
 不得自行编造、修改或补充专业分析师提供的数据。
+
+基本面报告中的金额已经由工具规范化。综合报告必须逐字保留
+基本面分析师给出的金额数值和单位，不得把“十亿美元”改写为
+“亿美元”，也不得自行换算或缩放金额。
 
 一、数据日期规则
 
@@ -205,6 +226,9 @@ calculate_confidence_score 工具计算综合置信度。
                 "分析指定美股的价格、均线、动量、"
                 "成交量、支撑位与阻力位。"
             ),
+            custom_output_extractor=(
+                extract_technical_agent_output
+            ),
         ),
         fundamental_agent.as_tool(
             tool_name="fundamental_analysis",
@@ -212,12 +236,16 @@ calculate_confidence_score 工具计算综合置信度。
                 "分析指定美股最近一期SEC财报的"
                 "盈利、增长、现金流和资本结构。"
             ),
+            custom_output_extractor=(
+                extract_fundamental_agent_output
+            ),
         ),
         news_agent.as_tool(
             tool_name="news_analysis",
             tool_description=(
                 "分析指定美股近期新闻和SEC重大事项申报。"
             ),
+            custom_output_extractor=extract_news_agent_output,
         ),
         confidence_score_tool,
     ],

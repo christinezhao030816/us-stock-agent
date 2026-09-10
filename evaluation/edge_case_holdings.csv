@@ -1,0 +1,5 @@
+﻿ticker,sector,portfolio_weight_pct,asset_class,in_scope
+BRK.B,Financials,1.19,Equity,True
+JPM,Financials,1.31,Equity,True
+SONY,Consumer Discretionary,1.1,Equity,True
+TSM,Information Technology,2.76,Equity,True

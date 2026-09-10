@@ -1,0 +1,69 @@
+﻿ticker,sector,portfolio_weight_pct,asset_class,in_scope
+AAPL,Information Technology,1.61,Equity,True
+ABBV,Healthcare,0.64,Equity,True
+ABT,Healthcare,0.56,Equity,True
+ACN,Information Technology,0.89,Equity,True
+ADM,Consumer Staples,0.97,Equity,True
+AEP,Utilities,0.79,Equity,True
+AMAT,Information Technology,0.18,Equity,True
+AMZN,Consumer Discretionary,1.1,Equity,True
+AVGO,Information Technology,0.71,Equity,True
+BKNG,Consumer Discretionary,0.99,Equity,True
+BRK.B,Financials,1.19,Equity,True
+CAT,Industrials,0.83,Equity,True
+CL,Consumer Staples,0.97,Equity,True
+COST,Consumer Staples,0.99,Equity,True
+CSCO,Information Technology,1.07,Equity,True
+CVX,Energy,0.69,Equity,True
+DUK,Utilities,0.79,Equity,True
+ELV,Healthcare,0.56,Equity,True
+EOG,Energy,0.69,Equity,True
+EQIX,Real Estate,0.99,Equity,True
+ETN,Industrials,0.45,Equity,True
+GD,Industrials,0.89,Equity,True
+GILD,Healthcare,0.56,Equity,True
+GOOGL,Communication Services,0.4,Equity,True
+HALO,Healthcare,0.24,Equity,True
+HD,Consumer Discretionary,0.99,Equity,True
+HON,Industrials,0.67,Equity,True
+HUM,Healthcare,0.32,Equity,True
+ILMN,Healthcare,0.48,Equity,True
+JNJ,Healthcare,0.95,Equity,True
+JPM,Financials,1.31,Equity,True
+KMI,Energy,0.69,Equity,True
+LIN,Materials,0.5,Equity,True
+MA,Financials,0.89,Equity,True
+MDT,Healthcare,0.56,Equity,True
+META,Communication Services,0.4,Equity,True
+MRK,Healthcare,0.79,Equity,True
+MSFT,Information Technology,1.97,Equity,True
+NEE,Utilities,0.79,Equity,True
+NEM,Materials,0.5,Equity,True
+NOC,Industrials,1.12,Equity,True
+NUE,Materials,0.5,Equity,True
+NVDA,Information Technology,0.89,Equity,True
+ORCL,Information Technology,0.36,Equity,True
+PBR,Energy,0.55,Equity,True
+PEP,Consumer Staples,1.29,Equity,True
+PG,Consumer Staples,1.61,Equity,True
+PGR,Financials,0.77,Equity,True
+PSX,Energy,0.69,Equity,True
+REGN,Healthcare,0.4,Equity,True
+RTX,Industrials,1.34,Equity,True
+SO,Utilities,0.79,Equity,True
+SONY,Consumer Discretionary,1.1,Equity,True
+SPGI,Financials,0.71,Equity,True
+T,Communication Services,0.6,Equity,True
+TJX,Consumer Discretionary,0.99,Equity,True
+TM,Consumer Discretionary,1.1,Equity,True
+TMO,Healthcare,0.71,Equity,True
+TSLA,Consumer Discretionary,0.83,Equity,True
+TMUS,Communication Services,0.4,Equity,True
+TSM,Information Technology,2.76,Equity,True
+TXN,Information Technology,1.25,Equity,True
+UNH,Healthcare,0.71,Equity,True
+V,Financials,1.07,Equity,True
+WEC,Utilities,0.79,Equity,True
+WELL,Real Estate,0.99,Equity,True
+WMB,Energy,0.69,Equity,True
+XOM,Energy,1.1,Equity,True

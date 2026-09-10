@@ -5,6 +5,13 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from tools.financial_amount import make_financial_amount
+from tools.ticker_symbols import (
+    canonicalize_symbol,
+    sec_symbol,
+    ticker_mapping,
+)
+
 
 load_dotenv()
 
@@ -32,7 +39,7 @@ def _get_company(symbol: str) -> dict:
         "https://www.sec.gov/files/company_tickers.json"
     )
 
-    symbol = symbol.upper()
+    symbol = sec_symbol(symbol)
 
     for company in companies.values():
         if company["ticker"].upper() == symbol:
@@ -217,8 +224,25 @@ def _growth_rate(
     return round((current / previous - 1) * 100, 2)
 
 
+def _amount(
+    value: float | None,
+    *,
+    period: dict[str, str | None],
+    statement_scope: str,
+) -> dict[str, Any] | None:
+    return make_financial_amount(
+        _billions(value),
+        currency="USD",
+        scale="billion",
+        period=period,
+        statement_scope=statement_scope,
+        display_scale="billion",
+    )
+
+
 def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
-    symbol = symbol.strip().upper()
+    symbol = canonicalize_symbol(symbol)
+    symbols = ticker_mapping(symbol)
     company = _get_company(symbol)
 
     cik = str(company["cik_str"]).zfill(10)
@@ -400,8 +424,79 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
             4,
         )
 
+    income_period = {
+        "start": target.get("start"),
+        "end": target.get("end"),
+    }
+    cash_flow_period = {
+        "start": (
+            cash_flow_target.get("start")
+            if cash_flow_target
+            else None
+        ),
+        "end": (
+            cash_flow_target.get("end")
+            if cash_flow_target
+            else None
+        ),
+    }
+    balance_sheet_period = {
+        "start": None,
+        "end": target.get("end"),
+    }
+
+    financial_amounts = {
+        "revenue": _amount(
+            revenue,
+            period=income_period,
+            statement_scope="income_statement_period",
+        ),
+        "net_income": _amount(
+            net_income,
+            period=income_period,
+            statement_scope="income_statement_period",
+        ),
+        "operating_cash_flow": _amount(
+            operating_cash_flow,
+            period=cash_flow_period,
+            statement_scope="fiscal_year_to_date_cash_flow",
+        ),
+        "capital_expenditure": _amount(
+            capital_expenditure,
+            period=cash_flow_period,
+            statement_scope="fiscal_year_to_date_cash_flow",
+        ),
+        "free_cash_flow": _amount(
+            free_cash_flow,
+            period=cash_flow_period,
+            statement_scope="fiscal_year_to_date_cash_flow",
+        ),
+        "cash": _amount(
+            cash,
+            period=balance_sheet_period,
+            statement_scope="period_end_balance_sheet",
+        ),
+        "total_debt": _amount(
+            total_debt,
+            period=balance_sheet_period,
+            statement_scope="period_end_balance_sheet",
+        ),
+        "assets": _amount(
+            assets,
+            period=balance_sheet_period,
+            statement_scope="period_end_balance_sheet",
+        ),
+        "equity": _amount(
+            equity,
+            period=balance_sheet_period,
+            statement_scope="period_end_balance_sheet",
+        ),
+    }
+
     return {
         "symbol": symbol,
+        "source_symbol": symbols["sec"],
+        "symbol_mapping": symbols,
         "company": company_facts.get("entityName"),
         "cik": cik,
         "form": target.get("form"),
@@ -420,6 +515,11 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
             else None
         ),
         "filing_date": target.get("filed"),
+        "financial_amounts": financial_amounts,
+        "financial_amount_display_rule": (
+            "报告金额时逐字使用 financial_amounts 中的 "
+            "display_zh；不得改写数值或单位"
+        ),
         "revenue_billion_usd": _billions(revenue),
         "net_income_billion_usd": _billions(net_income),
         "operating_cash_flow_billion_usd": _billions(

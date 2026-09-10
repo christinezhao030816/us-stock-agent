@@ -64,6 +64,21 @@ get_recent_sec_filing_texts 工具：
 - 现金、债务、资产和股东权益
 - 股东权益占资产比例
 
+工具返回的 financial_amounts 是金额的唯一展示来源。
+每个金额对象都包含 value、currency、scale、period、
+statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
+不得自行翻译、换算、缩放或替换单位。
+
+例如：
+
+- value=70.53、scale=billion、display_zh=70.53 十亿美元时，
+  只能写“70.53 十亿美元”，不得写“70.53 亿美元”。
+- 如确需使用“亿美元”，必须由工具预先提供该 display_zh；
+  模型不得自行把 billion 换成“亿”。
+
+名称以 _billion_usd 结尾的旧数值字段只用于比率和交叉检查，
+不得直接用于自然语言金额展示。
+
 必须区分：
 
 - 单季度损益数据
