@@ -51,6 +51,7 @@ def _get_company(symbol: str) -> dict:
 def _entries(
     us_gaap: dict,
     concepts: list[str],
+    unit: str = "USD",
 ) -> list[dict]:
     results = []
 
@@ -58,9 +59,10 @@ def _entries(
         fact = us_gaap.get(concept, {})
         units = fact.get("units", {})
 
-        for item in units.get("USD", []):
+        for item in units.get(unit, []):
             record = dict(item)
             record["_concept"] = concept
+            record["_unit"] = unit
             results.append(record)
 
     return results
@@ -172,10 +174,18 @@ def _prior_period_value(
     concepts: list[str],
     target: dict,
 ) -> float | None:
+    record = _prior_period_record(us_gaap, concepts, target)
+    return float(record["val"]) if record is not None else None
+
+
+def _prior_period_record(
+    us_gaap: dict,
+    concepts: list[str],
+    target: dict,
+) -> dict | None:
     target_start = datetime.fromisoformat(target["start"])
     target_end = datetime.fromisoformat(target["end"])
     target_duration = (target_end - target_start).days
-
     candidates = []
 
     for item in _entries(us_gaap, concepts):
@@ -204,7 +214,24 @@ def _prior_period_value(
         )
     )
 
-    return float(candidates[-1]["val"])
+    return candidates[-1]
+
+
+def _source_record(record: dict | None) -> dict[str, Any] | None:
+    if record is None:
+        return None
+    return {
+        "concept": record.get("_concept"),
+        "unit": record.get("_unit", "USD"),
+        "start": record.get("start"),
+        "end": record.get("end"),
+        "filed": record.get("filed"),
+        "form": record.get("form"),
+        "fiscal_year": record.get("fy"),
+        "fiscal_period": record.get("fp"),
+        "accession": record.get("accn"),
+        "frame": record.get("frame"),
+    }
 
 
 def _billions(value: float | None) -> float | None:
@@ -260,17 +287,42 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         "SalesRevenueNet",
     ]
 
-    revenue = _period_value(
+    revenue_record = _period_record(
         us_gaap,
         revenue_concepts,
         target,
     )
+    revenue = float(revenue_record["val"]) if revenue_record else None
 
-    net_income = _period_value(
+    net_income_record = _period_record(
         us_gaap,
         ["NetIncomeLoss"],
         target,
     )
+    net_income = (
+        float(net_income_record["val"]) if net_income_record else None
+    )
+
+    eps_facts = {
+        concept: {
+            "units": {
+                "USD": fact.get("units", {}).get("USD/shares", [])
+            }
+        }
+        for concept, fact in us_gaap.items()
+    }
+    eps_record = _period_record(
+        eps_facts,
+        ["EarningsPerShareDiluted"],
+        target,
+    ) or _period_record(
+        eps_facts,
+        ["EarningsPerShareBasic"],
+        target,
+    )
+    if eps_record is not None:
+        eps_record["_unit"] = "USD/shares"
+    eps = float(eps_record["val"]) if eps_record else None
 
     operating_cash_flow_record = _period_record(
         us_gaap,
@@ -294,10 +346,12 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         }
 
     capital_expenditure = None
+    capital_expenditure_record = None
     cash_flow_net_income = None
+    cash_flow_net_income_record = None
 
     if cash_flow_target is not None:
-        capital_expenditure = _period_value(
+        capital_expenditure_record = _period_record(
             us_gaap,
             [
                 "PaymentsToAcquirePropertyPlantAndEquipment",
@@ -305,21 +359,32 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
             ],
             cash_flow_target,
         )
+        capital_expenditure = (
+            float(capital_expenditure_record["val"])
+            if capital_expenditure_record
+            else None
+        )
 
-        cash_flow_net_income = _period_value(
+        cash_flow_net_income_record = _period_record(
             us_gaap,
             ["NetIncomeLoss"],
             cash_flow_target,
         )
+        cash_flow_net_income = (
+            float(cash_flow_net_income_record["val"])
+            if cash_flow_net_income_record
+            else None
+        )
 
-    assets = _period_value(
+    assets_record = _period_record(
         us_gaap,
         ["Assets"],
         target,
         instant=True,
     )
+    assets = float(assets_record["val"]) if assets_record else None
 
-    equity = _period_value(
+    equity_record = _period_record(
         us_gaap,
         [
             "StockholdersEquity",
@@ -328,8 +393,9 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         target,
         instant=True,
     )
+    equity = float(equity_record["val"]) if equity_record else None
 
-    cash = _period_value(
+    cash_record = _period_record(
         us_gaap,
         [
             "CashAndCashEquivalentsAtCarryingValue",
@@ -338,8 +404,9 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         target,
         instant=True,
     )
+    cash = float(cash_record["val"]) if cash_record else None
 
-    short_term_debt = _period_value(
+    short_term_debt_record = _period_record(
         us_gaap,
         [
             "ShortTermBorrowings",
@@ -348,8 +415,13 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         target,
         instant=True,
     )
+    short_term_debt = (
+        float(short_term_debt_record["val"])
+        if short_term_debt_record
+        else None
+    )
 
-    current_long_term_debt = _period_value(
+    current_long_term_debt_record = _period_record(
         us_gaap,
         [
             "LongTermDebtCurrent",
@@ -358,8 +430,13 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         target,
         instant=True,
     )
+    current_long_term_debt = (
+        float(current_long_term_debt_record["val"])
+        if current_long_term_debt_record
+        else None
+    )
 
-    noncurrent_debt = _period_value(
+    noncurrent_debt_record = _period_record(
         us_gaap,
         [
             "LongTermDebtNoncurrent",
@@ -368,17 +445,32 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         target,
         instant=True,
     )
+    noncurrent_debt = (
+        float(noncurrent_debt_record["val"])
+        if noncurrent_debt_record
+        else None
+    )
 
-    previous_revenue = _prior_period_value(
+    previous_revenue_record = _prior_period_record(
         us_gaap,
         revenue_concepts,
         target,
     )
+    previous_revenue = (
+        float(previous_revenue_record["val"])
+        if previous_revenue_record
+        else None
+    )
 
-    previous_net_income = _prior_period_value(
+    previous_net_income_record = _prior_period_record(
         us_gaap,
         ["NetIncomeLoss"],
         target,
+    )
+    previous_net_income = (
+        float(previous_net_income_record["val"])
+        if previous_net_income_record
+        else None
     )
 
     free_cash_flow = None
@@ -493,6 +585,102 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         ),
     }
 
+    debt_source_records = [
+        _source_record(record)
+        for record in (
+            short_term_debt_record,
+            current_long_term_debt_record,
+            noncurrent_debt_record,
+        )
+        if record is not None
+    ]
+    source_records = {
+        "revenue": _source_record(revenue_record),
+        "net_income": _source_record(net_income_record),
+        "eps": _source_record(eps_record),
+        "operating_cash_flow": _source_record(
+            operating_cash_flow_record
+        ),
+        "capital_expenditure": _source_record(
+            capital_expenditure_record
+        ),
+        "free_cash_flow": {
+            "concepts": [
+                item
+                for item in (
+                    _source_record(operating_cash_flow_record),
+                    _source_record(capital_expenditure_record),
+                )
+                if item is not None
+            ],
+            "end": cash_flow_period.get("end"),
+            "filed": (
+                operating_cash_flow_record.get("filed")
+                if operating_cash_flow_record
+                else target.get("filed")
+            ),
+        } if free_cash_flow is not None else None,
+        "assets": _source_record(assets_record),
+        "equity": _source_record(equity_record),
+        "cash": _source_record(cash_record),
+        "total_debt": {
+            "concepts": debt_source_records,
+            "end": target.get("end"),
+            "filed": max(
+                (str(item.get("filed") or "") for item in debt_source_records),
+                default="",
+            ) or target.get("filed"),
+        } if debt_source_records else None,
+        "revenue_yoy": {
+            **(_source_record(revenue_record) or {}),
+            "comparison": _source_record(previous_revenue_record),
+        } if revenue_record and previous_revenue_record else None,
+        "net_income_yoy": {
+            **(_source_record(net_income_record) or {}),
+            "comparison": _source_record(previous_net_income_record),
+        } if net_income_record and previous_net_income_record else None,
+        "net_margin": {
+            "concepts": [
+                item
+                for item in (
+                    _source_record(net_income_record),
+                    _source_record(revenue_record),
+                )
+                if item is not None
+            ],
+            "end": target.get("end"),
+            "filed": target.get("filed"),
+        } if net_margin is not None else None,
+        "equity_ratio": {
+            "concepts": [
+                item
+                for item in (
+                    _source_record(equity_record),
+                    _source_record(assets_record),
+                )
+                if item is not None
+            ],
+            "end": target.get("end"),
+            "filed": target.get("filed"),
+        } if equity_ratio is not None else None,
+        "operating_cash_flow_to_net_income": {
+            "concepts": [
+                item
+                for item in (
+                    _source_record(operating_cash_flow_record),
+                    _source_record(cash_flow_net_income_record),
+                )
+                if item is not None
+            ],
+            "end": cash_flow_period.get("end"),
+            "filed": target.get("filed"),
+        } if operating_cash_flow_to_net_income is not None else None,
+    }
+
+    source_url = (
+        f"{SEC_BASE_URL}/api/xbrl/companyfacts/CIK{cik}.json"
+    )
+
     return {
         "symbol": symbol,
         "source_symbol": symbols["sec"],
@@ -516,6 +704,9 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         ),
         "filing_date": target.get("filed"),
         "financial_amounts": financial_amounts,
+        "eps_diluted_usd_per_share": eps,
+        "source_url": source_url,
+        "source_records": source_records,
         "financial_amount_display_rule": (
             "报告金额时逐字使用 financial_amounts 中的 "
             "display_zh；不得改写数值或单位"

@@ -160,6 +160,18 @@ class FundamentalToolAmountIntegrationTests(unittest.TestCase):
             amounts["assets"]["statement_scope"],
             "period_end_balance_sheet",
         )
+        self.assertEqual(
+            result["source_records"]["revenue"]["concept"],
+            "RevenueFromContractWithCustomerExcludingAssessedTax",
+        )
+        self.assertEqual(
+            result["source_records"]["operating_cash_flow"]["concept"],
+            "NetCashProvidedByUsedInOperatingActivities",
+        )
+        self.assertEqual(
+            result["source_url"],
+            "https://data.sec.gov/api/xbrl/companyfacts/CIK0000909832.json",
+        )
 
 
 if __name__ == "__main__":

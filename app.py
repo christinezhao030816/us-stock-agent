@@ -11,7 +11,7 @@ from agents import Runner
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 project_directory = Path(__file__).resolve().parent
@@ -23,10 +23,12 @@ sys.path.insert(0, str(agent_directory))
 
 from strategist_agent import strategist_agent
 from tools.agent_status import (
+    extract_top_level_citations,
     extract_top_level_statuses,
     extract_top_level_technical_evidence,
     warnings_from_statuses,
 )
+from tools.citation_registry import finalize_cited_report
 
 
 logging.basicConfig(level=logging.INFO)
@@ -80,6 +82,9 @@ class AnalysisResponse(BaseModel):
     agent_statuses: dict[str, dict[str, Any]]
     warnings: list[str]
     technical_evidence: dict[str, Any] | None = None
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    source_registry: list[dict[str, Any]] = Field(default_factory=list)
+    citation_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 @app.get("/", include_in_schema=False)
@@ -163,13 +168,24 @@ async def analyze_stock(
         technical_evidence = extract_top_level_technical_evidence(
             result
         )
+        citations = extract_top_level_citations(result)
+        report, source_registry, citation_summary = (
+            finalize_cited_report(
+                str(result.final_output or ""),
+                citations,
+                language=request.language,
+            )
+        )
 
         return AnalysisResponse(
             symbol=symbol,
-            report=result.final_output,
+            report=report,
             agent_statuses=agent_statuses,
             warnings=warnings_from_statuses(agent_statuses),
             technical_evidence=technical_evidence,
+            citations=citations,
+            source_registry=source_registry,
+            citation_summary=citation_summary,
         )
 
     except Exception:

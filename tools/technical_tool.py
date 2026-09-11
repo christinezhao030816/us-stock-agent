@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pandas as pd
 import yfinance as yf
+from urllib.parse import quote
 
 from tools.ticker_symbols import canonicalize_symbol, ticker_mapping
 
@@ -643,6 +644,10 @@ def calculate_technical_metrics_from_history(
     technical_evidence = {
         "schema_version": "1.0",
         "source": PRICE_SOURCE,
+        "source_url": (
+            "https://finance.yahoo.com/quote/"
+            f"{quote(source_symbol, safe='')}/history/"
+        ),
         "canonical_symbol": canonical_symbol,
         "vendor_symbol": source_symbol,
         "retrieved_at_utc": retrieved_at,

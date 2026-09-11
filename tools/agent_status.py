@@ -3,6 +3,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from tools.citation_registry import build_agent_citations
+
 
 AGENT_ROLES = ("technical", "fundamental", "news", "strategy")
 VALID_STATUSES = {"success", "partial", "failed"}
@@ -370,11 +372,13 @@ _EVALUATORS: dict[
 def build_specialist_envelope(agent_role: str, run_result: Any) -> str:
     payloads, errors = collect_tool_results(run_result)
     status = _EVALUATORS[agent_role](payloads, errors)
+    citations = build_agent_citations(agent_role, payloads)
 
     envelope = {
         "agent": agent_role,
         "agent_status": status,
         "report": str(getattr(run_result, "final_output", "") or ""),
+        "citations": citations,
     }
 
     if agent_role == "technical":
@@ -414,6 +418,25 @@ def extract_top_level_technical_evidence(
             return evidence
 
     return None
+
+
+def extract_top_level_citations(run_result: Any) -> list[dict[str, Any]]:
+    payloads, _ = collect_tool_results(run_result)
+    citations: list[dict[str, Any]] = []
+
+    for tool_name in (
+        "technical_analysis",
+        "fundamental_analysis",
+        "news_analysis",
+    ):
+        for payload in payloads.get(tool_name, []):
+            values = payload.get("citations")
+            if isinstance(values, list):
+                citations.extend(
+                    item for item in values if isinstance(item, dict)
+                )
+
+    return citations
 
 
 def extract_top_level_statuses(

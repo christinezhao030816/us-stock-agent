@@ -49,6 +49,7 @@ calculate_confidence_score 工具计算综合置信度。
 - report 是专业分析正文
 - agent_status 是根据底层工具真实数据计算的结构化状态
 - technical_analysis还会返回technical_evidence元数据和证据路径
+- citations 是由底层工具确定性生成的逐项事实引用
 
 必须使用 report 完成综合分析，并如实采用 agent_status。
 如果任一专业模块为 partial 或 failed，必须在最终报告的数据限制
@@ -58,6 +59,11 @@ calculate_confidence_score 工具计算综合置信度。
 
 不得跳过任何专业分析工具，也不得跳过置信度计算工具。
 不得自行编造、修改或补充专业分析师提供的数据。
+只能使用三个专业分析工具传入的引用编号和URL。不得自行创造、
+猜测或改写URL、SEC filing编号、新闻标题或引用编号。看多、看空、
+风险、催化剂和综合结论中的重要事实，必须紧跟相应的[Tn]、[Fn]
+或[Nn]引用；纯分析判断引用其基础事实即可。partial或unsupported
+引用不得描述为完整支持。
 
 基本面报告中的金额已经由工具规范化。综合报告必须逐字保留
 基本面分析师给出的金额数值和单位，不得把“十亿美元”改写为
@@ -220,6 +226,10 @@ calculate_confidence_score 工具计算综合置信度。
 13. 数据限制
 
 14. 明确说明本分析不构成投资建议
+
+15. 来源与证据
+    使用专业工具传入的引用编号，列出来源名称、日期和完整URL。
+    不得列出未在正文中使用的来源。
 """,
     tools=[
         technical_agent.as_tool(

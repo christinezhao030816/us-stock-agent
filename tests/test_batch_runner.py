@@ -53,6 +53,17 @@ class BatchRunnerStatusTests(unittest.TestCase):
         self.assertEqual(result["technical_price_basis"], "")
         self.assertEqual(result["technical_reproducible"], "")
 
+    def test_old_response_without_citations_is_not_reported_as_full_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = batch_runner.save_citation_registry(
+                {},
+                "旧报告",
+                "AAPL",
+                Path(temporary_directory),
+            )
+        self.assertEqual(result["citation_coverage_pct"], "")
+        self.assertFalse(result["citation_integrity"])
+
     def test_structured_status_has_priority_over_report_sections(self) -> None:
         report = "技术面摘要 基本面摘要 消息面摘要 综合判断"
         statuses, source = batch_runner.extract_agent_statuses(
@@ -83,7 +94,7 @@ class BatchRunnerStatusTests(unittest.TestCase):
             )
             response_data = {
                 "symbol": "BRK.B",
-                "report": "技术面摘要 基本面摘要 消息面摘要 综合判断",
+                "report": "技术面摘要 基本面摘要[F1] 消息面摘要 综合判断",
                 "agent_statuses": {
                     "technical": _status("success"),
                     "fundamental": _status("success"),
@@ -100,6 +111,36 @@ class BatchRunnerStatusTests(unittest.TestCase):
                     },
                     "reproducible": True,
                 },
+                "citations": [
+                    {
+                        "claim_id": "F1",
+                        "agent": "fundamental",
+                        "claim_type": "fundamental_metric",
+                        "metric_name": "revenue",
+                        "claim_text": "Revenue = 100",
+                        "value": 100,
+                        "unit": "USD billion",
+                        "period_or_as_of_date": "2026-06-30",
+                        "source_name": "SEC Company Facts API",
+                        "source_type": "sec_company_facts",
+                        "source_url": "https://data.sec.gov/example.json",
+                        "source_date": "2026-08-01",
+                        "source_anchor": "facts.us-gaap.Revenues.units.USD",
+                        "evidence_path": "https://data.sec.gov/example.json",
+                        "citation_status": "supported",
+                    }
+                ],
+                "source_registry": [
+                    {
+                        "source_id": "SRC1",
+                        "source_name": "SEC Company Facts API",
+                        "source_type": "sec_company_facts",
+                        "source_url": "https://data.sec.gov/example.json",
+                        "source_date": "2026-08-01",
+                        "source_anchors": ["facts.us-gaap.Revenues.units.USD"],
+                        "claim_ids": ["F1"],
+                    }
+                ],
             }
 
             with patch.object(batch_runner, "PROJECT_ROOT", root):
@@ -133,6 +174,10 @@ class BatchRunnerStatusTests(unittest.TestCase):
             "Close; auto_adjust=false",
         )
         self.assertTrue(result["technical_reproducible"])
+        self.assertEqual(result["citation_required_claims"], 1)
+        self.assertEqual(result["cited_claims"], 1)
+        self.assertEqual(result["citation_coverage_pct"], 100.0)
+        self.assertTrue(result["citation_integrity"])
 
 
 if __name__ == "__main__":

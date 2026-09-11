@@ -9,6 +9,8 @@ from pathlib import Path
 
 import httpx
 
+from tools.citation_registry import citation_summary, save_source_registry
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -46,6 +48,11 @@ RESULT_FIELDS = [
     "technical_price_date",
     "technical_price_basis",
     "technical_reproducible",
+    "citation_required_claims",
+    "cited_claims",
+    "citation_coverage_pct",
+    "citation_integrity",
+    "source_registry_path",
     "confidence_score",
     "status",
     "http_status",
@@ -232,6 +239,44 @@ def save_technical_evidence(
     return result
 
 
+def save_citation_registry(
+    response_data: dict,
+    report: str,
+    ticker: str,
+    raw_directory: Path,
+) -> dict[str, str | int | float | bool]:
+    empty: dict[str, str | int | float | bool] = {
+        "citation_required_claims": "",
+        "cited_claims": "",
+        "citation_coverage_pct": "",
+        "citation_integrity": False,
+        "source_registry_path": "",
+    }
+    citations = response_data.get("citations")
+    registry = response_data.get("source_registry")
+    if not isinstance(citations, list) or not isinstance(registry, list):
+        return empty
+
+    clean_citations = [item for item in citations if isinstance(item, dict)]
+    clean_registry = [item for item in registry if isinstance(item, dict)]
+    summary = citation_summary(clean_citations, report, clean_registry)
+    directory = raw_directory / "source_registry"
+    destination = directory / f"{ticker.replace('/', '_')}.json"
+    save_source_registry(
+        destination,
+        citations=clean_citations,
+        source_registry=clean_registry,
+        summary=summary,
+    )
+    return {
+        "citation_required_claims": summary["citation_required_claims"],
+        "cited_claims": summary["cited_claims"],
+        "citation_coverage_pct": summary["citation_coverage_pct"],
+        "citation_integrity": summary["citation_integrity"],
+        "source_registry_path": _portable_path(destination),
+    }
+
+
 def extract_confidence_score(report: str) -> int | None:
     cleaned = report.replace("*", "")
 
@@ -349,6 +394,13 @@ def analyze_one(
         "technical_price_basis": "",
         "technical_reproducible": "",
     }
+    citation_fields: dict[str, str | int | float | bool] = {
+        "citation_required_claims": "",
+        "cited_claims": "",
+        "citation_coverage_pct": "",
+        "citation_integrity": False,
+        "source_registry_path": "",
+    }
 
     try:
         response = client.post(
@@ -388,6 +440,12 @@ def analyze_one(
         status = overall_status(agent_statuses)
         evidence_fields = save_technical_evidence(
             data,
+            ticker,
+            raw_directory,
+        )
+        citation_fields = save_citation_registry(
+            data,
+            report,
             ticker,
             raw_directory,
         )
@@ -457,6 +515,7 @@ def analyze_one(
         "news_agent_status": agent_statuses["news"],
         "strategy_agent_status": agent_statuses["strategy"],
         **evidence_fields,
+        **citation_fields,
         "confidence_score": (
             confidence_score
             if confidence_score is not None

@@ -88,6 +88,51 @@ class AnalyzeEndpointCompatibilityTests(unittest.IsolatedAsyncioTestCase):
             "/tmp/AAPL.json",
         )
 
+    async def test_analyze_returns_claim_level_citations_and_keeps_report(self) -> None:
+        claim = {
+            "claim_id": "F1",
+            "agent": "fundamental",
+            "claim_type": "fundamental_metric",
+            "metric_name": "revenue",
+            "claim_text": "Revenue = 100 USD billion",
+            "value": 100,
+            "unit": "USD billion",
+            "period_or_as_of_date": "2026-06-30",
+            "source_name": "SEC Company Facts API",
+            "source_type": "sec_company_facts",
+            "source_url": "https://data.sec.gov/example.json",
+            "source_date": "2026-08-01",
+            "source_anchor": "facts.us-gaap.Revenues.units.USD",
+            "evidence_path": "https://data.sec.gov/example.json",
+            "citation_status": "supported",
+        }
+        outputs = [
+            _agent_output("technical"),
+            _agent_output("news"),
+            SimpleNamespace(
+                type="tool_call_output_item",
+                tool_origin=SimpleNamespace(agent_tool_name="fundamental_analysis"),
+                output=json.dumps({"agent_status": _status(), "citations": [claim]}),
+                call_id="call-fundamental",
+            ),
+        ]
+        run_result = SimpleNamespace(final_output="原报告依据[F1]", new_items=outputs)
+
+        with patch.object(
+            application.Runner,
+            "run",
+            new=AsyncMock(return_value=run_result),
+        ):
+            response = await application.analyze_stock(
+                application.AnalysisRequest(symbol="AAPL")
+            )
+
+        self.assertIn("原报告依据[F1]", response.report)
+        self.assertIn("来源与证据", response.report)
+        self.assertEqual(response.citations[0]["claim_id"], "F1")
+        self.assertEqual(response.citation_summary["cited_claims"], 1)
+        self.assertTrue(response.citation_summary["citation_integrity"])
+
 
 if __name__ == "__main__":
     unittest.main()
