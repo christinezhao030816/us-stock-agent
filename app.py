@@ -1,10 +1,14 @@
+import asyncio
 import logging
+import os
 import sys
+import time
+from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agents import Runner
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
@@ -13,6 +17,7 @@ from pydantic import BaseModel, field_validator
 project_directory = Path(__file__).resolve().parent
 agent_directory = project_directory / "agents"
 static_directory = project_directory / "static"
+prototype_path = project_directory / "parallax_prototype.html"
 
 sys.path.insert(0, str(agent_directory))
 
@@ -26,6 +31,15 @@ from tools.agent_status import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+analysis_rate_limit = max(
+    1,
+    int(os.getenv("ANALYSIS_RATE_LIMIT_PER_HOUR", "5")),
+)
+analysis_slots = asyncio.Semaphore(
+    max(1, int(os.getenv("MAX_CONCURRENT_ANALYSES", "2")))
+)
+request_history: dict[str, deque[float]] = defaultdict(deque)
 
 app = FastAPI(
     title="美股多 Agent 分析系统",
@@ -41,6 +55,7 @@ app.mount(
 
 class AnalysisRequest(BaseModel):
     symbol: str
+    language: Literal["zh", "en"] = "zh"
 
     @field_validator("symbol")
     @classmethod
@@ -69,7 +84,7 @@ class AnalysisResponse(BaseModel):
 
 @app.get("/", include_in_schema=False)
 def home_page() -> FileResponse:
-    return FileResponse(str(static_directory / "index.html"))
+    return FileResponse(str(prototype_path))
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -85,9 +100,14 @@ def health_check() -> dict:
     }
 
 
-@app.post("/analyze", response_model=AnalysisResponse)
-async def analyze_stock(request: AnalysisRequest) -> AnalysisResponse:
+async def analyze_stock(
+    request: AnalysisRequest,
+    client_ip: str | None = None,
+) -> AnalysisResponse:
     symbol = request.symbol
+    output_language = (
+        "English" if request.language == "en" else "简体中文"
+    )
 
     prompt = f"""
 请对美股 {symbol} 进行完整分析。
@@ -110,10 +130,35 @@ async def analyze_stock(request: AnalysisRequest) -> AnalysisResponse:
 - 数据限制
 
 不得虚构数据，并明确说明这不是投资建议。
+
+最终综合报告必须使用{output_language}。股票代码、公司名、
+数据源名称和财务单位须保持准确，不得因翻译改变数字、日期、
+币种、链接或专有名词。
 """
 
+    if client_ip is not None:
+        now = time.monotonic()
+        history = request_history[client_ip]
+
+        while history and now - history[0] >= 3600:
+            history.popleft()
+
+        if len(history) >= analysis_rate_limit:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "请求过于频繁，请稍后再试"
+                    if request.language == "zh"
+                    else "Too many requests. Please try again later."
+                ),
+                headers={"Retry-After": "3600"},
+            )
+
+        history.append(now)
+
     try:
-        result = await Runner.run(strategist_agent, prompt)
+        async with analysis_slots:
+            result = await Runner.run(strategist_agent, prompt)
         agent_statuses = extract_top_level_statuses(result)
         technical_evidence = extract_top_level_technical_evidence(
             result
@@ -134,3 +179,16 @@ async def analyze_stock(request: AnalysisRequest) -> AnalysisResponse:
             status_code=500,
             detail="分析失败，请查看终端中的错误信息",
         )
+
+
+@app.post("/analyze", response_model=AnalysisResponse)
+async def analyze_stock_endpoint(
+    request: AnalysisRequest,
+    http_request: Request,
+) -> AnalysisResponse:
+    client_ip = (
+        http_request.client.host
+        if http_request.client is not None
+        else None
+    )
+    return await analyze_stock(request, client_ip=client_ip)

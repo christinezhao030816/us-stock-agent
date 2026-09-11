@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: parallax-stock-research
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: SEC_USER_AGENT
+        sync: false
+      - key: ANALYSIS_RATE_LIMIT_PER_HOUR
+        value: "5"
+      - key: MAX_CONCURRENT_ANALYSES
+        value: "2"
