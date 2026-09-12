@@ -24,11 +24,13 @@ sys.path.insert(0, str(agent_directory))
 from strategist_agent import strategist_agent
 from tools.agent_status import (
     extract_top_level_citations,
+    extract_top_level_fundamental_freshness,
     extract_top_level_statuses,
     extract_top_level_technical_evidence,
     warnings_from_statuses,
 )
 from tools.citation_registry import finalize_cited_report
+from tools.financial_freshness import freshness_banner
 
 
 logging.basicConfig(level=logging.INFO)
@@ -85,6 +87,9 @@ class AnalysisResponse(BaseModel):
     citations: list[dict[str, Any]] = Field(default_factory=list)
     source_registry: list[dict[str, Any]] = Field(default_factory=list)
     citation_summary: dict[str, Any] = Field(default_factory=dict)
+    fundamental_freshness: dict[str, Any] | None = None
+    freshness_summary: dict[str, Any] = Field(default_factory=dict)
+    stale_claims: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @app.get("/", include_in_schema=False)
@@ -169,6 +174,9 @@ async def analyze_stock(
             result
         )
         citations = extract_top_level_citations(result)
+        fundamental_freshness = (
+            extract_top_level_fundamental_freshness(result)
+        )
         report, source_registry, citation_summary = (
             finalize_cited_report(
                 str(result.final_output or ""),
@@ -176,6 +184,23 @@ async def analyze_stock(
                 language=request.language,
             )
         )
+        report = freshness_banner(
+            report,
+            fundamental_freshness,
+            language=request.language,
+        )
+        freshness_summary = (
+            fundamental_freshness.get("summary", {})
+            if isinstance(fundamental_freshness, dict)
+            else {}
+        )
+        stale_claims = [
+            claim
+            for claim in citations
+            if claim.get("agent") == "fundamental"
+            and claim.get("freshness_status")
+            in {"caution", "stale", "unknown"}
+        ]
 
         return AnalysisResponse(
             symbol=symbol,
@@ -186,6 +211,9 @@ async def analyze_stock(
             citations=citations,
             source_registry=source_registry,
             citation_summary=citation_summary,
+            fundamental_freshness=fundamental_freshness,
+            freshness_summary=freshness_summary,
+            stale_claims=stale_claims,
         )
 
     except Exception:

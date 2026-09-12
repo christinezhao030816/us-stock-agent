@@ -112,7 +112,24 @@ class AnalyzeEndpointCompatibilityTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(
                 type="tool_call_output_item",
                 tool_origin=SimpleNamespace(agent_tool_name="fundamental_analysis"),
-                output=json.dumps({"agent_status": _status(), "citations": [claim]}),
+                output=json.dumps(
+                    {
+                        "agent_status": _status(),
+                        "citations": [claim],
+                        "fundamental_freshness": {
+                            "analysis_as_of": "2026-09-10",
+                            "facts": [],
+                            "summary": {
+                                "fundamental_freshness_status": "fresh",
+                                "fresh_fact_count": 1,
+                                "caution_fact_count": 0,
+                                "stale_fact_count": 0,
+                                "unknown_freshness_count": 0,
+                                "current_analysis_usable": True,
+                            },
+                        },
+                    }
+                ),
                 call_id="call-fundamental",
             ),
         ]
@@ -132,6 +149,11 @@ class AnalyzeEndpointCompatibilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.citations[0]["claim_id"], "F1")
         self.assertEqual(response.citation_summary["cited_claims"], 1)
         self.assertTrue(response.citation_summary["citation_integrity"])
+        self.assertEqual(
+            response.freshness_summary["fundamental_freshness_status"],
+            "fresh",
+        )
+        self.assertIn("财务数据新鲜度", response.report)
 
 
 if __name__ == "__main__":

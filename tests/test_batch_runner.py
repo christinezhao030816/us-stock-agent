@@ -64,6 +64,43 @@ class BatchRunnerStatusTests(unittest.TestCase):
         self.assertEqual(result["citation_coverage_pct"], "")
         self.assertFalse(result["citation_integrity"])
 
+    def test_old_response_without_freshness_is_unknown(self) -> None:
+        result = batch_runner.extract_freshness_fields({})
+        self.assertEqual(result["fundamental_freshness_status"], "unknown")
+        self.assertEqual(
+            result["latest_period_alignment_status"],
+            "unknown",
+        )
+        self.assertEqual(result["fresh_fact_count"], "")
+
+    def test_batch_records_structured_freshness_counts(self) -> None:
+        result = batch_runner.extract_freshness_fields(
+            {
+                "freshness_summary": {
+                    "fundamental_freshness_status": "caution",
+                    "age_freshness_status": "fresh",
+                    "latest_filing_period_end": "2026-06-30",
+                    "selected_period_end": "2026-03-31",
+                    "period_lag_days": 91,
+                    "latest_period_alignment_status": "historical_fallback",
+                    "fresh_fact_count": 8,
+                    "caution_fact_count": 2,
+                    "stale_fact_count": 1,
+                    "unknown_freshness_count": 3,
+                    "oldest_fact_age_days": 500,
+                }
+            }
+        )
+        self.assertEqual(result["fundamental_freshness_status"], "caution")
+        self.assertEqual(result["age_freshness_status"], "fresh")
+        self.assertEqual(
+            result["latest_period_alignment_status"],
+            "historical_fallback",
+        )
+        self.assertEqual(result["period_lag_days"], 91)
+        self.assertEqual(result["stale_fact_count"], 1)
+        self.assertEqual(result["oldest_fact_age_days"], 500)
+
     def test_structured_status_has_priority_over_report_sections(self) -> None:
         report = "技术面摘要 基本面摘要 消息面摘要 综合判断"
         statuses, source = batch_runner.extract_agent_statuses(

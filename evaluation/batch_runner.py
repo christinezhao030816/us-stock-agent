@@ -53,6 +53,17 @@ RESULT_FIELDS = [
     "citation_coverage_pct",
     "citation_integrity",
     "source_registry_path",
+    "fundamental_freshness_status",
+    "age_freshness_status",
+    "latest_filing_period_end",
+    "selected_period_end",
+    "period_lag_days",
+    "latest_period_alignment_status",
+    "fresh_fact_count",
+    "caution_fact_count",
+    "stale_fact_count",
+    "unknown_freshness_count",
+    "oldest_fact_age_days",
     "confidence_score",
     "status",
     "http_status",
@@ -277,6 +288,55 @@ def save_citation_registry(
     }
 
 
+def extract_freshness_fields(
+    response_data: dict,
+) -> dict[str, str | int]:
+    summary = response_data.get("freshness_summary")
+    if not isinstance(summary, dict):
+        freshness = response_data.get("fundamental_freshness")
+        summary = (
+            freshness.get("summary")
+            if isinstance(freshness, dict)
+            else None
+        )
+    if not isinstance(summary, dict):
+        return {
+            "fundamental_freshness_status": "unknown",
+            "age_freshness_status": "unknown",
+            "latest_filing_period_end": "",
+            "selected_period_end": "",
+            "period_lag_days": "",
+            "latest_period_alignment_status": "unknown",
+            "fresh_fact_count": "",
+            "caution_fact_count": "",
+            "stale_fact_count": "",
+            "unknown_freshness_count": "",
+            "oldest_fact_age_days": "",
+        }
+    status = str(summary.get("fundamental_freshness_status") or "unknown")
+    if status not in {"fresh", "caution", "stale", "unknown"}:
+        status = "unknown"
+    return {
+        "fundamental_freshness_status": status,
+        "age_freshness_status": str(
+            summary.get("age_freshness_status") or "unknown"
+        ),
+        "latest_filing_period_end": summary.get(
+            "latest_filing_period_end", ""
+        ),
+        "selected_period_end": summary.get("selected_period_end", ""),
+        "period_lag_days": summary.get("period_lag_days", ""),
+        "latest_period_alignment_status": str(
+            summary.get("latest_period_alignment_status") or "unknown"
+        ),
+        "fresh_fact_count": summary.get("fresh_fact_count", ""),
+        "caution_fact_count": summary.get("caution_fact_count", ""),
+        "stale_fact_count": summary.get("stale_fact_count", ""),
+        "unknown_freshness_count": summary.get("unknown_freshness_count", ""),
+        "oldest_fact_age_days": summary.get("oldest_fact_age_days", ""),
+    }
+
+
 def extract_confidence_score(report: str) -> int | None:
     cleaned = report.replace("*", "")
 
@@ -401,6 +461,9 @@ def analyze_one(
         "citation_integrity": False,
         "source_registry_path": "",
     }
+    freshness_fields: dict[str, str | int] = (
+        extract_freshness_fields({})
+    )
 
     try:
         response = client.post(
@@ -449,6 +512,7 @@ def analyze_one(
             ticker,
             raw_directory,
         )
+        freshness_fields = extract_freshness_fields(data)
 
         if incomplete_agents:
             error_type = "incomplete_agent_data"
@@ -516,6 +580,7 @@ def analyze_one(
         "strategy_agent_status": agent_statuses["strategy"],
         **evidence_fields,
         **citation_fields,
+        **freshness_fields,
         "confidence_score": (
             confidence_score
             if confidence_score is not None

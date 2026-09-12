@@ -116,6 +116,22 @@ class FundamentalToolAmountIntegrationTests(unittest.TestCase):
                 }
             },
         }
+        submissions = {
+            "filings": {
+                "recent": {
+                    "form": ["10-Q"],
+                    "filingDate": ["2026-05-28"],
+                    "reportDate": [period_end],
+                    "accessionNumber": ["0000909832-26-000001"],
+                    "primaryDocument": ["cost-20260510.htm"],
+                }
+            }
+        }
+
+        def sec_response(url: str) -> dict:
+            if "/submissions/" in url:
+                return submissions
+            return company_facts
 
         with (
             patch.object(
@@ -126,7 +142,7 @@ class FundamentalToolAmountIntegrationTests(unittest.TestCase):
             patch.object(
                 fundamental_tool,
                 "_get_json",
-                return_value=company_facts,
+                side_effect=sec_response,
             ),
         ):
             result = fundamental_tool.get_fundamental_metrics("COST")
@@ -171,6 +187,38 @@ class FundamentalToolAmountIntegrationTests(unittest.TestCase):
         self.assertEqual(
             result["source_url"],
             "https://data.sec.gov/api/xbrl/companyfacts/CIK0000909832.json",
+        )
+        freshness = {
+            item["metric_name"]: item
+            for item in result["fundamental_freshness"]["facts"]
+        }
+        self.assertEqual(
+            freshness["revenue"]["period_start"],
+            income_start,
+        )
+        self.assertEqual(
+            freshness["operating_cash_flow"]["period_start"],
+            cash_flow_start,
+        )
+        self.assertEqual(
+            freshness["total_assets"]["period_start"],
+            None,
+        )
+        self.assertEqual(
+            freshness["total_assets"]["period_end"],
+            period_end,
+        )
+        self.assertEqual(
+            result["metric_selection_audit"]["revenue"]["selected"][
+                "form"
+            ],
+            "10-Q",
+        )
+        self.assertEqual(
+            result["fundamental_freshness"]["summary"][
+                "latest_period_alignment_status"
+            ],
+            "aligned",
         )
 
 

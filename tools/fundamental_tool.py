@@ -1,11 +1,15 @@
 import os
-from datetime import datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
 
 from tools.financial_amount import make_financial_amount
+from tools.financial_freshness import (
+    analysis_date,
+    build_structured_freshness,
+)
 from tools.ticker_symbols import (
     canonicalize_symbol,
     sec_symbol,
@@ -17,6 +21,16 @@ load_dotenv()
 
 SEC_BASE_URL = "https://data.sec.gov"
 SEC_USER_AGENT = os.getenv("SEC_USER_AGENT")
+SUPPORTED_STRUCTURED_FORMS = {"10-Q", "10-K"}
+APPLICABLE_PERIODIC_FORMS = {"10-Q", "10-Q/A", "10-K", "10-K/A"}
+REVENUE_CONCEPTS = [
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+    "RevenueFromContractWithCustomerIncludingAssessedTax",
+    "RegulatedAndUnregulatedOperatingRevenue",
+    "OperatingRevenues",
+    "Revenues",
+    "SalesRevenueNet",
+]
 
 if not SEC_USER_AGENT:
     raise RuntimeError("未读取到 SEC_USER_AGENT")
@@ -46,6 +60,87 @@ def _get_company(symbol: str) -> dict:
             return company
 
     raise ValueError(f"SEC 中找不到股票代码：{symbol}")
+
+
+def _select_latest_applicable_filing(
+    submissions: dict[str, Any],
+    analysis_as_of: str | date | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    as_of = analysis_date(analysis_as_of)
+    recent = submissions.get("filings", {}).get("recent", {})
+    forms = recent.get("form") or []
+    candidates = []
+    excluded = []
+
+    def field(name: str, index: int) -> Any:
+        values = recent.get(name) or []
+        return values[index] if index < len(values) else None
+
+    for index, form in enumerate(forms):
+        if form not in APPLICABLE_PERIODIC_FORMS:
+            continue
+        filing_date_value = field("filingDate", index)
+        period_end_value = field("reportDate", index)
+        record = {
+            "filing_date": filing_date_value,
+            "form": form,
+            "period_end": period_end_value,
+            "accession_number": field("accessionNumber", index),
+            "primary_document": field("primaryDocument", index),
+        }
+        try:
+            filing_date = date.fromisoformat(str(filing_date_value or ""))
+            period_end = date.fromisoformat(str(period_end_value or ""))
+        except ValueError:
+            excluded.append({**record, "reason": "missing_or_invalid_date"})
+            continue
+        if filing_date > as_of:
+            excluded.append({**record, "reason": "filing_after_analysis_date"})
+            continue
+        if period_end > as_of:
+            excluded.append({**record, "reason": "period_after_analysis_date"})
+            continue
+        candidates.append(record)
+
+    candidates.sort(
+        key=lambda item: (
+            str(item.get("period_end") or ""),
+            str(item.get("filing_date") or ""),
+        )
+    )
+    selected = candidates[-1] if candidates else None
+    if selected:
+        for item in candidates[:-1]:
+            excluded.append(
+                {
+                    **item,
+                    "reason": (
+                        "older_filing_period"
+                        if item.get("period_end") != selected.get("period_end")
+                        else "superseded_filing_for_same_period"
+                    ),
+                }
+            )
+    return selected, {
+        "analysis_as_of": as_of.isoformat(),
+        "selected": selected,
+        "selected_reason": (
+            "latest reportDate available by analysis date; latest filingDate "
+            "wins within the same reporting period"
+            if selected
+            else "no applicable 10-Q or 10-K filing available by analysis date"
+        ),
+        "eligible_candidate_count": len(candidates),
+        "excluded_candidate_count": len(excluded),
+        "excluded_candidates": sorted(
+            excluded,
+            key=lambda item: (
+                str(item.get("period_end") or ""),
+                str(item.get("filing_date") or ""),
+            ),
+            reverse=True,
+        )[:100],
+    }
 
 
 def _entries(
@@ -78,36 +173,122 @@ def _duration_days(item: dict) -> int:
     return (end - start).days
 
 
-def _latest_reporting_period(us_gaap: dict) -> dict:
+def _period_fit_score(item: dict) -> int:
+    duration = _duration_days(item)
+    form = item.get("form")
+    if form == "10-Q":
+        if 70 <= duration <= 110:
+            return 3
+        if 150 <= duration <= 300:
+            return 2
+        return 0
+    if form == "10-K":
+        return 3 if 330 <= duration <= 390 else 0
+    return 0
+
+
+def _select_latest_reporting_period(
+    us_gaap: dict,
+    analysis_as_of: str | date | None = None,
+) -> tuple[dict, dict[str, Any]]:
+    as_of = analysis_date(analysis_as_of)
     revenue_entries = _entries(
         us_gaap,
-        [
-            "RevenueFromContractWithCustomerExcludingAssessedTax",
-            "Revenues",
-            "SalesRevenueNet",
-        ],
+        REVENUE_CONCEPTS,
     )
-
-    valid = [
-        item
-        for item in revenue_entries
-        if item.get("form") in {"10-Q", "10-K"}
-        and item.get("start")
-        and item.get("end")
-        and item.get("filed")
-    ]
+    valid = []
+    excluded = []
+    for item in revenue_entries:
+        reason = None
+        try:
+            start = date.fromisoformat(str(item.get("start") or ""))
+            end = date.fromisoformat(str(item.get("end") or ""))
+            filed = date.fromisoformat(str(item.get("filed") or ""))
+        except ValueError:
+            reason = "missing_or_invalid_date"
+        else:
+            if item.get("form") not in SUPPORTED_STRUCTURED_FORMS:
+                reason = "unsupported_form"
+            elif end > as_of or filed > as_of:
+                reason = "future_period_or_filing"
+            elif end < start or _period_fit_score(item) == 0:
+                reason = "abnormal_or_ambiguous_duration"
+        if reason:
+            excluded.append(
+                {
+                    "concept": item.get("_concept"),
+                    "form": item.get("form"),
+                    "start": item.get("start"),
+                    "end": item.get("end"),
+                    "filed": item.get("filed"),
+                    "reason": reason,
+                }
+            )
+        else:
+            valid.append(item)
 
     if not valid:
         raise ValueError("未找到可用的 SEC 营业收入记录")
 
+    concept_priority = {
+        concept: len(REVENUE_CONCEPTS) - index
+        for index, concept in enumerate(REVENUE_CONCEPTS)
+    }
     valid.sort(
         key=lambda item: (
             item["end"],
+            _period_fit_score(item),
             item["filed"],
+            concept_priority.get(item.get("_concept"), 0),
         )
     )
+    selected = valid[-1]
+    for item in valid[:-1]:
+        excluded.append(
+            {
+                "concept": item.get("_concept"),
+                "form": item.get("form"),
+                "start": item.get("start"),
+                "end": item.get("end"),
+                "filed": item.get("filed"),
+                "reason": (
+                    "older_period"
+                    if item.get("end") != selected.get("end")
+                    else "lower_period_or_concept_priority"
+                ),
+            }
+        )
+    audit = {
+        "analysis_as_of": as_of.isoformat(),
+        "candidate_count": len(revenue_entries),
+        "eligible_candidate_count": len(valid),
+        "selected": _source_record(selected),
+        "selected_reason": (
+            "最新period_end；期间长度符合表单口径；"
+            "同日候选按filed_date和concept优先级选择"
+        ),
+        "excluded_candidate_count": len(excluded),
+        "excluded_candidates": sorted(
+            excluded,
+            key=lambda item: (
+                str(item.get("end") or ""),
+                str(item.get("filed") or ""),
+            ),
+            reverse=True,
+        )[:100],
+    }
+    return selected, audit
 
-    return valid[-1]
+
+def _latest_reporting_period(
+    us_gaap: dict,
+    analysis_as_of: str | date | None = None,
+) -> dict:
+    selected, _ = _select_latest_reporting_period(
+        us_gaap,
+        analysis_as_of,
+    )
+    return selected
 
 
 def _period_record(
@@ -120,7 +301,7 @@ def _period_record(
     candidates = []
 
     for item in _entries(us_gaap, concepts):
-        if item.get("form") not in {"10-Q", "10-K"}:
+        if item.get("form") != target.get("form"):
             continue
 
         if item.get("end") != target.get("end"):
@@ -234,6 +415,84 @@ def _source_record(record: dict | None) -> dict[str, Any] | None:
     }
 
 
+def _metric_selection_audit(
+    us_gaap: dict,
+    selected_record: dict[str, Any] | None,
+    target: dict,
+) -> dict[str, Any]:
+    if not isinstance(selected_record, dict):
+        return {
+            "selected": None,
+            "selected_reason": "no_matching_fact",
+            "excluded_candidate_count": 0,
+            "excluded_candidates": [],
+        }
+    records = selected_record.get("concepts")
+    records = records if isinstance(records, list) else [selected_record]
+    concepts = [
+        str(record.get("concept"))
+        for record in records
+        if record.get("concept")
+    ]
+    units = {
+        str(record.get("unit") or "USD")
+        for record in records
+    }
+    candidates = []
+    for unit in units or {"USD"}:
+        candidates.extend(_entries(us_gaap, concepts, unit=unit))
+    selected_accessions = {
+        record.get("accession") for record in records if record.get("accession")
+    }
+    excluded = []
+    for item in candidates:
+        if item.get("accn") in selected_accessions:
+            continue
+        if item.get("form") != target.get("form"):
+            reason = "form_mismatch"
+        elif item.get("end") != selected_record.get("end"):
+            reason = (
+                "older_period"
+                if str(item.get("end") or "")
+                < str(selected_record.get("end") or "")
+                else "period_mismatch"
+            )
+        elif (
+            selected_record.get("start") is not None
+            and item.get("start") != selected_record.get("start")
+        ):
+            reason = "flow_scope_mismatch"
+        else:
+            reason = "superseded_duplicate"
+        excluded.append(
+            {
+                "concept": item.get("_concept"),
+                "form": item.get("form"),
+                "start": item.get("start"),
+                "end": item.get("end"),
+                "filed": item.get("filed"),
+                "accession": item.get("accn"),
+                "reason": reason,
+            }
+        )
+    return {
+        "selected": selected_record,
+        "selected_reason": (
+            "matched target form, period_end and flow start; "
+            "latest filing wins among exact-period duplicates"
+        ),
+        "excluded_candidate_count": len(excluded),
+        "excluded_candidates": sorted(
+            excluded,
+            key=lambda item: (
+                str(item.get("end") or ""),
+                str(item.get("filed") or ""),
+            ),
+            reverse=True,
+        )[:50],
+    }
+
+
 def _billions(value: float | None) -> float | None:
     if value is None:
         return None
@@ -267,7 +526,10 @@ def _amount(
     )
 
 
-def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
+def get_fundamental_metrics(
+    symbol: str,
+    analysis_as_of: str | None = None,
+) -> dict[str, Any]:
     symbol = canonicalize_symbol(symbol)
     symbols = ticker_mapping(symbol)
     company = _get_company(symbol)
@@ -277,15 +539,25 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
     company_facts = _get_json(
         f"{SEC_BASE_URL}/api/xbrl/companyfacts/CIK{cik}.json"
     )
+    submissions_url = f"{SEC_BASE_URL}/submissions/CIK{cik}.json"
+    submissions = _get_json(submissions_url)
 
-    us_gaap = company_facts["facts"]["us-gaap"]
-    target = _latest_reporting_period(us_gaap)
+    as_of = analysis_date(analysis_as_of)
+    latest_filing, latest_filing_audit = (
+        _select_latest_applicable_filing(submissions, as_of)
+    )
+    us_gaap = company_facts.get("facts", {}).get("us-gaap")
+    if not isinstance(us_gaap, dict):
+        raise ValueError(
+            "SEC Company Facts没有可用的us-gaap结构化事实；"
+            "外国发行人应使用6-K/20-F/40-F申报文本备用路径"
+        )
+    target, selection_audit = _select_latest_reporting_period(
+        us_gaap,
+        as_of,
+    )
 
-    revenue_concepts = [
-        "RevenueFromContractWithCustomerExcludingAssessedTax",
-        "Revenues",
-        "SalesRevenueNet",
-    ]
+    revenue_concepts = REVENUE_CONCEPTS
 
     revenue_record = _period_record(
         us_gaap,
@@ -681,7 +953,16 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         f"{SEC_BASE_URL}/api/xbrl/companyfacts/CIK{cik}.json"
     )
 
-    return {
+    metric_selection_audit = {
+        metric_name: _metric_selection_audit(
+            us_gaap,
+            record,
+            target,
+        )
+        for metric_name, record in source_records.items()
+    }
+
+    result = {
         "symbol": symbol,
         "source_symbol": symbols["sec"],
         "symbol_mapping": symbols,
@@ -707,6 +988,12 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         "eps_diluted_usd_per_share": eps,
         "source_url": source_url,
         "source_records": source_records,
+        "analysis_as_of": as_of.isoformat(),
+        "selection_audit": selection_audit,
+        "latest_applicable_filing": latest_filing,
+        "latest_filing_source_url": submissions_url,
+        "latest_filing_selection_audit": latest_filing_audit,
+        "metric_selection_audit": metric_selection_audit,
         "financial_amount_display_rule": (
             "报告金额时逐字使用 financial_amounts 中的 "
             "display_zh；不得改写数值或单位"
@@ -748,3 +1035,9 @@ def get_fundamental_metrics(symbol: str) -> dict[str, Any]:
         ),
         "source": "SEC Company Facts API",
     }
+    result["fundamental_freshness"] = build_structured_freshness(
+        result,
+        as_of,
+        latest_filing=latest_filing,
+    )
+    return result

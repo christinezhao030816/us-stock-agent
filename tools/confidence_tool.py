@@ -47,6 +47,8 @@ def calculate_confidence_score(
     has_data_read_errors: bool,
     sec_text_truncated: bool,
     signal_alignment: str,
+    fundamental_freshness_status: str = "unknown",
+    fundamental_period_age_days: int | None = None,
 ) -> dict[str, Any]:
     """
     根据固定规则计算综合分析置信度。
@@ -122,9 +124,18 @@ def calculate_confidence_score(
         technical_metrics_present * 5
     )
 
-    fundamental_score = (
-        fundamental_metrics_present * 5
-    )
+    freshness_class = fundamental_freshness_status.strip().lower()
+    if freshness_class not in {"fresh", "caution", "stale", "unknown"}:
+        raise ValueError(
+            "fundamental_freshness_status必须是fresh、caution、"
+            "stale或unknown"
+        )
+    if freshness_class == "fresh":
+        fundamental_score = fundamental_metrics_present * 5
+    elif freshness_class == "caution":
+        fundamental_score = fundamental_metrics_present * 2
+    else:
+        fundamental_score = 0
 
     news_count_score = relevant_news_count
 
@@ -177,13 +188,17 @@ def calculate_confidence_score(
         ],
     )
 
-    fundamental_freshness_score = _freshness_score(
-        fundamental_age_days,
-        [
-            (45, 4),
-            (120, 3),
-            (240, 1),
-        ],
+    fundamental_freshness_score = (
+        _freshness_score(
+            fundamental_age_days,
+            [
+                (45, 4),
+                (120, 3),
+                (240, 1),
+            ],
+        )
+        if freshness_class in {"fresh", "caution"}
+        else 0
     )
 
     freshness_score = (
@@ -259,6 +274,15 @@ def calculate_confidence_score(
             "存在数据读取错误"
         )
 
+    if freshness_class == "caution":
+        score_cap = min(score_cap, 79)
+        cap_reasons.append("基本面数据新鲜度为caution")
+    elif freshness_class in {"stale", "unknown"}:
+        score_cap = min(score_cap, 59)
+        cap_reasons.append(
+            f"基本面数据新鲜度为{freshness_class}，不计基本面质量分"
+        )
+
     if (
         relevant_news_count == 0
         and not has_sec_primary_text
@@ -299,6 +323,7 @@ def calculate_confidence_score(
             "fundamental_quality": {
                 "score": fundamental_score,
                 "maximum": 25,
+                "freshness_status": freshness_class,
             },
             "news_quality": {
                 "score": news_score,
@@ -312,6 +337,9 @@ def calculate_confidence_score(
             "freshness": {
                 "score": freshness_score,
                 "maximum": 15,
+                "technical_score": technical_freshness_score,
+                "news_score": news_freshness_score,
+                "fundamental_score": fundamental_freshness_score,
             },
         },
         "data_age_days": {
@@ -320,6 +348,7 @@ def calculate_confidence_score(
             "fundamental_filing": (
                 fundamental_age_days
             ),
+            "fundamental_period": fundamental_period_age_days,
         },
         "deductions": deductions,
         "deduction_total": deduction_total,

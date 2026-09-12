@@ -64,6 +64,17 @@ get_recent_sec_filing_texts 工具：
 - 现金、债务、资产和股东权益
 - 股东权益占资产比例
 
+工具返回的fundamental_freshness是所有基本面事实的新鲜度唯一依据。
+必须逐项显示财务期间、提交日期、period_age_days、filing_age_days、
+freshness_status和freshness_reason。只有fresh事实可以称为“最近一期”
+或“最新财务数据”。caution、stale或unknown必须醒目标注；任何核心
+事实不是fresh时，基本面结论必须降级。current_analysis_usable=false时，
+不得形成正常的当前基本面结论，也不得把历史数据用于当前看多判断。
+必须同时核对age_freshness_status和latest_period_alignment_status。
+如果后者为historical_fallback，即使年龄状态为fresh，也只能把数值
+描述为历史回退；必须列出selected_period_end、latest_filing_period_end
+和period_lag_days，不得称为最新数据，也不得用于当前基本面结论。
+
 工具返回的 financial_amounts 是金额的唯一展示来源。
 每个金额对象都包含 value、currency、scale、period、
 statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
@@ -86,6 +97,8 @@ statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
 - 期末资产负债表数据
 
 不得把累计现金流与单季度净利润直接比较。
+不得把YTD现金流描述成单季度现金流；只有收入和净利润的起止日期、
+表单及期间口径一致时才可计算或解释利润率。
 
 二、外国私人发行人备用规则
 
@@ -176,6 +189,7 @@ statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
 12. 数据完整性与正文截断情况
 13. SEC原文链接
 14. 数据限制
+15. 财务数据新鲜度与过期警告
 
 必须说明分析不构成投资建议。
 """,

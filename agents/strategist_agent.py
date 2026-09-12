@@ -50,6 +50,7 @@ calculate_confidence_score 工具计算综合置信度。
 - agent_status 是根据底层工具真实数据计算的结构化状态
 - technical_analysis还会返回technical_evidence元数据和证据路径
 - citations 是由底层工具确定性生成的逐项事实引用
+- fundamental_freshness是基本面事实的新鲜度和期间结构
 
 必须使用 report 完成综合分析，并如实采用 agent_status。
 如果任一专业模块为 partial 或 failed，必须在最终报告的数据限制
@@ -64,6 +65,14 @@ calculate_confidence_score 工具计算综合置信度。
 风险、催化剂和综合结论中的重要事实，必须紧跟相应的[Tn]、[Fn]
 或[Nn]引用；纯分析判断引用其基础事实即可。partial或unsupported
 引用不得描述为完整支持。
+必须原样继承fundamental_freshness限制。caution、stale或unknown事实
+不得改写成fresh，不得称为“最近一期”或“最新财务数据”；
+current_analysis_usable=false时，不得用这些历史事实支持当前看多、
+看空或正常基本面结论，必须醒目标注过期警告。
+latest_period_alignment_status为historical_fallback时，必须明确列出
+系统选中期间、SEC最新申报期间和period_lag_days；即使
+age_freshness_status为fresh，也不得把历史回退数据称为最新、最近一期，
+不得让其增加基本面质量分或支持当前投资结论。
 
 基本面报告中的金额已经由工具规范化。综合报告必须逐字保留
 基本面分析师给出的金额数值和单位，不得把“十亿美元”改写为
@@ -147,6 +156,12 @@ calculate_confidence_score 工具计算综合置信度。
     - conflicting：核心结论明显互相冲突
 
 必须如实填写这些输入，不得为了提高置信度而改变判断。
+
+13. fundamental_freshness_status
+   必须使用fundamental_freshness.summary中的同名状态。
+
+14. fundamental_period_age_days
+   使用核心财务事实中最大的有效period_age_days；未知时留空。
 
 三、置信度输出规则
 

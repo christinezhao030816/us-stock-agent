@@ -4,6 +4,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from tools.financial_freshness import (
+    build_filing_freshness,
+    evaluate_fact_freshness,
+)
+
 
 VALID_CITATION_STATUSES = {"supported", "partial", "unsupported"}
 _CLAIM_MARKER = re.compile(r"\[([TFN]\d+)\]")
@@ -226,6 +231,17 @@ def build_fundamental_citations(metrics: dict[str, Any]) -> list[dict[str, Any]]
         ("operating_cash_flow_to_net_income", metrics.get("operating_cash_flow_to_net_income"), "ratio", records.get("operating_cash_flow_to_net_income")),
     ]
     claims = []
+    freshness = metrics.get("fundamental_freshness")
+    freshness_facts = (
+        freshness.get("facts")
+        if isinstance(freshness, dict)
+        else []
+    ) or []
+    freshness_by_metric = {
+        str(item.get("metric_name")): item
+        for item in freshness_facts
+        if isinstance(item, dict)
+    }
     for index, (metric_name, raw_value, unit, record) in enumerate(definitions, start=1):
         if isinstance(raw_value, dict):
             value = raw_value.get("value")
@@ -268,6 +284,162 @@ def build_fundamental_citations(metrics: dict[str, Any]) -> list[dict[str, Any]]
             metrics.get("symbol") or company
         ) or None
         claim["publisher"] = claim["source_name"]
+        fact_freshness = freshness_by_metric.get(metric_name)
+        if fact_freshness is None and metric_name in {
+            "reporting_period",
+            "filing_date",
+        }:
+            fact_freshness = freshness_by_metric.get("revenue")
+        claim["freshness"] = fact_freshness
+        claim["freshness_status"] = (
+            fact_freshness.get("freshness_status")
+            if isinstance(fact_freshness, dict)
+            else "unknown"
+        )
+        claims.append(claim)
+    latest_filing = metrics.get("latest_applicable_filing")
+    if isinstance(latest_filing, dict):
+        latest_url = str(
+            metrics.get("latest_filing_source_url") or ""
+        ).strip() or None
+        accession = str(
+            latest_filing.get("accession_number") or ""
+        ).strip()
+        latest_period = str(
+            latest_filing.get("period_end") or ""
+        ).strip() or None
+        latest_date = str(
+            latest_filing.get("filing_date") or ""
+        ).strip() or None
+        latest_form = str(latest_filing.get("form") or "").strip()
+        latest_claim = _claim(
+            claim_id=f"F{len(claims) + 1}",
+            agent="fundamental",
+            claim_type="latest_periodic_filing",
+            metric_name="latest_filing_period",
+            claim_text=(
+                f"{company} latest applicable filing is {latest_form} "
+                f"for {latest_period}, filed {latest_date}"
+            ),
+            value={
+                "form": latest_form,
+                "period_end": latest_period,
+                "filing_date": latest_date,
+                "accession_number": accession or None,
+            },
+            unit="filing_metadata",
+            period_or_as_of_date=latest_period,
+            source_name="SEC Submissions API",
+            source_type="sec_submissions",
+            source_url=latest_url,
+            source_date=latest_date,
+            source_anchor=(
+                f"filings.recent accession:{accession}"
+                if accession else None
+            ),
+            evidence_path=latest_url,
+            citation_status=_status_for(
+                value=latest_period,
+                source_url=latest_url,
+                source_date=latest_date,
+                source_anchor=(
+                    f"filings.recent accession:{accession}"
+                    if accession else None
+                ),
+            ),
+        )
+        latest_claim["company_or_ticker"] = str(
+            metrics.get("symbol") or company
+        ) or None
+        latest_claim["publisher"] = "SEC EDGAR"
+        latest_fact_freshness = evaluate_fact_freshness(
+            metric_name="latest_filing_period",
+            value=latest_period,
+            unit="filing_metadata",
+            form=latest_form,
+            fiscal_year=None,
+            fiscal_period=None,
+            period_start=None,
+            period_end=latest_period,
+            filed_date=latest_date,
+            accession=accession or None,
+            analysis_as_of=(
+                freshness.get("analysis_as_of")
+                if isinstance(freshness, dict)
+                else None
+            ),
+        )
+        latest_claim["freshness"] = latest_fact_freshness
+        latest_claim["freshness_status"] = latest_fact_freshness[
+            "freshness_status"
+        ]
+        claims.append(latest_claim)
+    return claims
+
+
+def build_fundamental_filing_citations(
+    filing_data: dict[str, Any],
+) -> list[dict[str, Any]]:
+    freshness = build_filing_freshness(filing_data)
+    freshness_facts = freshness.get("facts") or []
+    claims = []
+    for index, filing in enumerate(filing_data.get("filings") or [], start=1):
+        primary = filing.get("primary_document")
+        primary = primary if isinstance(primary, dict) else {}
+        url = str(
+            filing.get("filing_index_url") or primary.get("url") or ""
+        ).strip() or None
+        accession = str(filing.get("accession_number") or "").strip()
+        form = str(filing.get("form") or "").strip()
+        filing_date = str(filing.get("filing_date") or "").strip() or None
+        text = " ".join(str(primary.get("text") or "").split())
+        description = text[:300]
+        supported = bool(
+            url and accession and filing_date and description
+            and not primary.get("error")
+        )
+        fact_freshness = (
+            freshness_facts[index - 1]
+            if index <= len(freshness_facts)
+            else None
+        )
+        claim = _claim(
+            claim_id=f"F{index}",
+            agent="fundamental",
+            claim_type="foreign_filing_evidence",
+            metric_name=f"foreign_filing_{index}",
+            claim_text=(
+                f"SEC {form} filing {accession}: {description}"
+                if description else f"SEC {form} filing {accession}"
+            ),
+            value={
+                "form": form,
+                "description": description or None,
+                "accession_number": accession,
+            },
+            unit="filing_text",
+            period_or_as_of_date=str(
+                filing.get("report_date") or filing_date or ""
+            ) or None,
+            source_name="SEC EDGAR",
+            source_type="sec_filing",
+            source_url=url,
+            source_date=filing_date,
+            source_anchor=(
+                f"accession:{accession}; primary_document.text"
+                if accession else None
+            ),
+            evidence_path=url,
+            citation_status="supported" if supported else "partial",
+        )
+        claim["company_or_ticker"] = filing_data.get("symbol")
+        claim["publisher"] = "SEC EDGAR"
+        claim["freshness"] = fact_freshness
+        claim["freshness_status"] = (
+            fact_freshness.get("freshness_status")
+            if isinstance(fact_freshness, dict)
+            else "unknown"
+        )
         claims.append(claim)
     return claims
 
@@ -416,7 +588,14 @@ def build_agent_citations(
         return build_technical_citations(values[-1]) if values else []
     if agent_role == "fundamental":
         values = payloads.get("get_fundamental_metrics", [])
-        return build_fundamental_citations(values[-1]) if values else []
+        if values:
+            return build_fundamental_citations(values[-1])
+        filings = payloads.get("get_recent_sec_filing_texts", [])
+        return (
+            build_fundamental_filing_citations(filings[-1])
+            if filings
+            else []
+        )
     if agent_role == "news":
         return build_news_citations(payloads)
     raise ValueError(f"未知 Agent：{agent_role}")

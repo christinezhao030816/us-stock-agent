@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from tools.citation_registry import build_agent_citations
+from tools.financial_freshness import build_filing_freshness
 
 
 AGENT_ROLES = ("technical", "fundamental", "news", "strategy")
@@ -236,7 +237,7 @@ def evaluate_fundamental_status(
             else 0
         )
         if filing_count > 0:
-            return _status(
+            status = _status(
                 "partial",
                 core_data_present=True,
                 missing_items=required,
@@ -244,6 +245,12 @@ def evaluate_fundamental_status(
                 data_sources=["SEC EDGAR filing text"],
                 source_symbols=_source_symbols(payloads),
             )
+            freshness = build_filing_freshness(filing_data)
+            status["fundamental_freshness_status"] = (
+                freshness["summary"]["fundamental_freshness_status"]
+            )
+            status["current_analysis_usable"] = False
+            return status
 
         return _status(
             "failed",
@@ -272,6 +279,54 @@ def evaluate_fundamental_status(
         "equity": amounts.get("equity"),
     }
     missing = [key for key in required if values.get(key) is None]
+    freshness = metrics.get("fundamental_freshness")
+    freshness_summary = (
+        freshness.get("summary")
+        if isinstance(freshness, dict)
+        else None
+    )
+    if not isinstance(freshness_summary, dict):
+        missing.append("fundamental_freshness")
+        freshness_status = "unknown"
+        alignment_status = "unknown"
+        current_usable = False
+        all_core_fresh = False
+    else:
+        freshness_status = str(
+            freshness_summary.get("fundamental_freshness_status")
+            or "unknown"
+        )
+        current_usable = bool(
+            freshness_summary.get("current_analysis_usable")
+        )
+        alignment_status = str(
+            freshness_summary.get("latest_period_alignment_status")
+            or (
+                "aligned"
+                if current_usable and freshness_status == "fresh"
+                else "unknown"
+            )
+        )
+        all_core_fresh = bool(
+            freshness_summary.get("all_available_core_facts_fresh")
+        )
+        for fact in freshness.get("facts") or []:
+            if (
+                fact.get("metric_name")
+                in {"revenue", "net_income", "operating_cash_flow", "total_assets"}
+                and fact.get("value") is not None
+                and fact.get("freshness_status") != "fresh"
+            ):
+                missing.append(
+                    f"freshness:{fact.get('metric_name')}="
+                    f"{fact.get('freshness_status')}"
+                )
+        if not current_usable:
+            missing.append("fresh_current_core_data")
+        if alignment_status != "aligned":
+            missing.append(
+                f"latest_period_alignment={alignment_status}"
+            )
     core_present = bool(
         metrics.get("company")
         and any(amounts.get(key) is not None for key in amounts)
@@ -279,7 +334,7 @@ def evaluate_fundamental_status(
 
     if not core_present:
         status = "failed"
-    elif missing or errors:
+    elif missing or errors or not all_core_fresh:
         status = "partial"
     else:
         status = "success"
@@ -288,7 +343,7 @@ def evaluate_fundamental_status(
     if filing_data:
         sources.append(str(filing_data.get("source") or "SEC EDGAR"))
 
-    return _status(
+    result = _status(
         status,
         core_data_present=core_present,
         missing_items=missing,
@@ -296,6 +351,10 @@ def evaluate_fundamental_status(
         data_sources=sources,
         source_symbols=_source_symbols(payloads),
     )
+    result["fundamental_freshness_status"] = freshness_status
+    result["latest_period_alignment_status"] = alignment_status
+    result["current_analysis_usable"] = current_usable
+    return result
 
 
 def evaluate_news_status(
@@ -389,6 +448,20 @@ def build_specialist_envelope(agent_role: str, run_result: Any) -> str:
         if isinstance(evidence, dict):
             envelope["technical_evidence"] = evidence
 
+    if agent_role == "fundamental":
+        results = payloads.get("get_fundamental_metrics", [])
+        metrics = results[-1] if results else {}
+        freshness = metrics.get("fundamental_freshness")
+        if not isinstance(freshness, dict):
+            filings = payloads.get("get_recent_sec_filing_texts", [])
+            freshness = (
+                build_filing_freshness(filings[-1])
+                if filings
+                else None
+            )
+        if isinstance(freshness, dict):
+            envelope["fundamental_freshness"] = freshness
+
     return json.dumps(
         envelope,
         ensure_ascii=False,
@@ -437,6 +510,17 @@ def extract_top_level_citations(run_result: Any) -> list[dict[str, Any]]:
                 )
 
     return citations
+
+
+def extract_top_level_fundamental_freshness(
+    run_result: Any,
+) -> dict[str, Any] | None:
+    payloads, _ = collect_tool_results(run_result)
+    for payload in reversed(payloads.get("fundamental_analysis", [])):
+        freshness = payload.get("fundamental_freshness")
+        if isinstance(freshness, dict):
+            return freshness
+    return None
 
 
 def extract_top_level_statuses(

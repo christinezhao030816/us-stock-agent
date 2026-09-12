@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from tools.citation_registry import (
+    build_agent_citations,
     build_fundamental_citations,
     build_news_citations,
     build_source_registry,
@@ -56,6 +57,24 @@ class CitationMappingTests(unittest.TestCase):
                 }
             },
             "source_records": {"revenue": record},
+            "latest_applicable_filing": {
+                "form": "10-Q",
+                "filing_date": "2026-08-01",
+                "period_end": "2026-06-30",
+                "accession_number": "0000000001-26-000001",
+            },
+            "latest_filing_source_url": (
+                "https://data.sec.gov/submissions/CIK0000000001.json"
+            ),
+            "fundamental_freshness": {
+                "facts": [
+                    {
+                        "metric_name": "revenue",
+                        "freshness_status": "fresh",
+                        "period_age_days": 72,
+                    }
+                ]
+            },
         }
 
         claims = build_fundamental_citations(metrics)
@@ -67,6 +86,19 @@ class CitationMappingTests(unittest.TestCase):
             )
         )
         self.assertEqual(revenue["source_date"], "2026-08-01")
+        self.assertEqual(revenue["freshness_status"], "fresh")
+        self.assertEqual(revenue["freshness"]["period_age_days"], 72)
+        latest = next(
+            item for item in claims
+            if item["metric_name"] == "latest_filing_period"
+        )
+        self.assertEqual(latest["citation_status"], "supported")
+        self.assertEqual(latest["period_or_as_of_date"], "2026-06-30")
+        self.assertEqual(latest["freshness_status"], "fresh")
+        self.assertIn(
+            "0000000001-26-000001",
+            latest["source_anchor"],
+        )
 
     def test_technical_metrics_point_to_p2_json_paths(self) -> None:
         keys = (
@@ -192,6 +224,37 @@ class CitationMappingTests(unittest.TestCase):
         self.assertEqual(
             claims[0]["source_anchor"],
             "accession:0001-26-000001; primary_document.text",
+        )
+
+    def test_foreign_fundamental_filing_keeps_p3_citation_and_freshness(self) -> None:
+        claims = build_agent_citations(
+            "fundamental",
+            {
+                "get_recent_sec_filing_texts": [
+                    {
+                        "symbol": "TSM",
+                        "filings": [
+                            {
+                                "form": "6-K",
+                                "filing_date": "2026-08-14",
+                                "report_date": "2026-06-30",
+                                "accession_number": "0001-26-000002",
+                                "filing_index_url": "https://www.sec.gov/tsm-index.html",
+                                "primary_document": {
+                                    "text": "Quarterly financial results",
+                                    "error": None,
+                                },
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        self.assertEqual(claims[0]["claim_id"], "F1")
+        self.assertEqual(claims[0]["citation_status"], "supported")
+        self.assertIn(
+            claims[0]["freshness_status"],
+            {"fresh", "caution", "stale"},
         )
 
 

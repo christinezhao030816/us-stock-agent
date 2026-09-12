@@ -66,6 +66,16 @@ def _fundamental_metrics(**overrides) -> dict:
             "equity": amount,
         },
         "source": "SEC Company Facts API",
+        "fundamental_freshness": {
+            "facts": [],
+            "summary": {
+                "fundamental_freshness_status": "fresh",
+                "age_freshness_status": "fresh",
+                "latest_period_alignment_status": "aligned",
+                "current_analysis_usable": True,
+                "all_available_core_facts_fresh": True,
+            },
+        },
         "symbol_mapping": {
             "canonical": "BRK.B",
             "sec": "BRK-B",
@@ -156,6 +166,96 @@ class SpecialistStatusTests(unittest.TestCase):
         )
         self.assertEqual(status["status"], "partial")
         self.assertIn("total_debt", status["missing_items"])
+
+    def test_stale_core_fundamental_fact_is_partial(self) -> None:
+        metrics = _fundamental_metrics()
+        metrics["fundamental_freshness"] = {
+            "facts": [
+                {
+                    "metric_name": "revenue",
+                    "value": 1,
+                    "freshness_status": "stale",
+                }
+            ],
+            "summary": {
+                "fundamental_freshness_status": "stale",
+                "current_analysis_usable": False,
+                "all_available_core_facts_fresh": False,
+            },
+        }
+        status = evaluate_fundamental_status(
+            {"get_fundamental_metrics": [metrics]},
+            [],
+        )
+        self.assertEqual(status["status"], "partial")
+        self.assertFalse(status["current_analysis_usable"])
+        self.assertIn("fresh_current_core_data", status["missing_items"])
+
+    def test_historical_fallback_is_partial_even_when_age_is_fresh(self) -> None:
+        metrics = _fundamental_metrics()
+        metrics["fundamental_freshness"] = {
+            "facts": [
+                {
+                    "metric_name": "revenue",
+                    "value": 1,
+                    "age_freshness_status": "fresh",
+                    "freshness_status": "stale",
+                    "latest_period_alignment_status": "historical_fallback",
+                }
+            ],
+            "summary": {
+                "fundamental_freshness_status": "stale",
+                "age_freshness_status": "fresh",
+                "latest_period_alignment_status": "historical_fallback",
+                "current_analysis_usable": False,
+                "all_available_core_facts_fresh": False,
+            },
+        }
+        status = evaluate_fundamental_status(
+            {"get_fundamental_metrics": [metrics]},
+            [],
+        )
+        self.assertEqual(status["status"], "partial")
+        self.assertEqual(
+            status["latest_period_alignment_status"],
+            "historical_fallback",
+        )
+        self.assertIn(
+            "latest_period_alignment=historical_fallback",
+            status["missing_items"],
+        )
+
+    def test_strategy_keeps_stale_fundamental_warning(self) -> None:
+        envelopes = []
+        for role, value in (
+            ("technical", "success"),
+            ("fundamental", "partial"),
+            ("news", "success"),
+        ):
+            detail = {
+                "status": value,
+                "core_data_present": True,
+                "missing_items": (
+                    ["fresh_current_core_data"]
+                    if role == "fundamental"
+                    else []
+                ),
+                "errors": [],
+                "data_sources": [],
+                "source_symbols": {},
+            }
+            envelopes.append(
+                _tool_output(
+                    f"{role}_analysis",
+                    json.dumps({"agent_status": detail}),
+                )
+            )
+        statuses = extract_top_level_statuses(
+            SimpleNamespace(new_items=envelopes, final_output="综合报告")
+        )
+        self.assertEqual(statuses["fundamental"]["status"], "partial")
+        self.assertEqual(statuses["strategy"]["status"], "partial")
+        self.assertIn("fundamental", statuses["strategy"]["missing_items"])
 
     def test_empty_news_results_are_honest_partial(self) -> None:
         status = evaluate_news_status(
