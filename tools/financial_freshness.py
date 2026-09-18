@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -173,17 +174,31 @@ def build_structured_freshness(
     amounts = amounts if isinstance(amounts, dict) else {}
     records = metrics.get("source_records")
     records = records if isinstance(records, dict) else {}
+
+    def amount_unit(amount: Any, fallback: str) -> str:
+        if not isinstance(amount, dict):
+            return fallback
+        currency = str(amount.get("currency") or "").strip()
+        scale = str(amount.get("scale") or "").strip()
+        return " ".join(part for part in (currency, scale) if part) or fallback
+
+    eps_value = metrics.get("eps_diluted_per_share")
+    if eps_value is None:
+        eps_value = metrics.get("eps_diluted_usd_per_share")
+    default_currency = str(metrics.get("reporting_currency") or "USD")
+    default_amount_unit = f"{default_currency} billion"
     definitions = [
-        ("revenue", amounts.get("revenue"), "USD billion", "revenue"),
-        ("net_income", amounts.get("net_income"), "USD billion", "net_income"),
-        ("EPS", metrics.get("eps_diluted_usd_per_share"), "USD/share", "eps"),
-        ("operating_cash_flow", amounts.get("operating_cash_flow"), "USD billion", "operating_cash_flow"),
-        ("capital_expenditure", amounts.get("capital_expenditure"), "USD billion", "capital_expenditure"),
-        ("free_cash_flow", amounts.get("free_cash_flow"), "USD billion", "free_cash_flow"),
-        ("cash", amounts.get("cash"), "USD billion", "cash"),
-        ("total_assets", amounts.get("assets"), "USD billion", "assets"),
-        ("total_debt", amounts.get("total_debt"), "USD billion", "total_debt"),
-        ("equity", amounts.get("equity"), "USD billion", "equity"),
+        ("revenue", amounts.get("revenue"), amount_unit(amounts.get("revenue"), default_amount_unit), "revenue"),
+        ("net_income", amounts.get("net_income"), amount_unit(amounts.get("net_income"), default_amount_unit), "net_income"),
+        ("EPS", eps_value, str(metrics.get("eps_unit") or f"{default_currency}/share"), "eps"),
+        ("operating_cash_flow", amounts.get("operating_cash_flow"), amount_unit(amounts.get("operating_cash_flow"), default_amount_unit), "operating_cash_flow"),
+        ("capital_expenditure", amounts.get("capital_expenditure"), amount_unit(amounts.get("capital_expenditure"), default_amount_unit), "capital_expenditure"),
+        ("free_cash_flow", amounts.get("free_cash_flow"), amount_unit(amounts.get("free_cash_flow"), default_amount_unit), "free_cash_flow"),
+        ("cash", amounts.get("cash"), amount_unit(amounts.get("cash"), default_amount_unit), "cash"),
+        ("total_assets", amounts.get("assets"), amount_unit(amounts.get("assets"), default_amount_unit), "assets"),
+        ("total_liabilities", amounts.get("liabilities"), amount_unit(amounts.get("liabilities"), default_amount_unit), "liabilities"),
+        ("total_debt", amounts.get("total_debt"), amount_unit(amounts.get("total_debt"), default_amount_unit), "total_debt"),
+        ("equity", amounts.get("equity"), amount_unit(amounts.get("equity"), default_amount_unit), "equity"),
         ("revenue_yoy", metrics.get("revenue_yoy_percent"), "percent", "revenue_yoy"),
         ("net_income_yoy", metrics.get("net_income_yoy_percent"), "percent", "net_income_yoy"),
         ("net_margin", metrics.get("net_margin"), "ratio", "net_margin"),
@@ -450,6 +465,19 @@ def freshness_banner(
     usable = bool(summary.get("current_analysis_usable"))
     cleaned = str(report or "")
     if not usable:
+        # Preserve the meaning of explicit prohibitions before replacing
+        # unsupported recency wording in affirmative prose.
+        negative_prefix = r"((?:不能|不得)[^。\n]{0,100}(?:称为|写成|描述为))"
+        cleaned = re.sub(
+            negative_prefix + r"([“\"]?)最近一期([”\"]?)",
+            r"\1\2当前有效期间\3",
+            cleaned,
+        )
+        cleaned = re.sub(
+            negative_prefix + r"([“\"]?)最新财务数据([”\"]?)",
+            r"\1\2当前有效财务数据\3",
+            cleaned,
+        )
         cleaned = cleaned.replace("最新或最近一期", "当前有效")
         cleaned = cleaned.replace("最近一期", "历史期间（未通过新鲜度检查）")
         cleaned = cleaned.replace("最新财务数据", "历史财务数据（未通过新鲜度检查）")

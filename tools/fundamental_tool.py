@@ -10,6 +10,10 @@ from tools.financial_freshness import (
     analysis_date,
     build_structured_freshness,
 )
+from tools.ifrs_fundamental import (
+    IFRS_PILOT_ISSUERS,
+    build_ifrs_fundamental_metrics,
+)
 from tools.ticker_symbols import (
     canonicalize_symbol,
     sec_symbol,
@@ -543,6 +547,20 @@ def get_fundamental_metrics(
     submissions = _get_json(submissions_url)
 
     as_of = analysis_date(analysis_as_of)
+    source_url = (
+        f"{SEC_BASE_URL}/api/xbrl/companyfacts/CIK{cik}.json"
+    )
+    if symbol in IFRS_PILOT_ISSUERS:
+        return build_ifrs_fundamental_metrics(
+            symbol=symbol,
+            symbols=symbols,
+            company_facts=company_facts,
+            submissions=submissions,
+            cik=cik,
+            source_url=source_url,
+            submissions_url=submissions_url,
+            analysis_as_of=as_of,
+        )
     latest_filing, latest_filing_audit = (
         _select_latest_applicable_filing(submissions, as_of)
     )
@@ -948,10 +966,6 @@ def get_fundamental_metrics(
             "filed": target.get("filed"),
         } if operating_cash_flow_to_net_income is not None else None,
     }
-
-    source_url = (
-        f"{SEC_BASE_URL}/api/xbrl/companyfacts/CIK{cik}.json"
-    )
 
     metric_selection_audit = {
         metric_name: _metric_selection_audit(

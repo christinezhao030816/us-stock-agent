@@ -8,7 +8,7 @@ from agents import Agent, Runner, function_tool
 from tools.filing_text_tool import (
     get_recent_sec_filing_texts,
 )
-from tools.fundamental_tool import (
+from tools.fundamental_agent_tool import (
     get_fundamental_metrics,
 )
 
@@ -39,7 +39,8 @@ get_recent_sec_filing_texts 工具：
 
 - 未找到可用的SEC营业收入记录
 - 没有匹配到10-Q或10-K
-- 公司使用6-K、20-F或40-F申报
+- 外国发行人的结构化IFRS核心事实缺失，或最新20-F/6-K
+  没有进入Company Facts
 - 结构化收入、利润或现金流数据缺失
 - get_fundamental_metrics工具返回错误
 
@@ -89,6 +90,12 @@ statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
 
 名称以 _billion_usd 结尾的旧数值字段只用于比率和交叉检查，
 不得直接用于自然语言金额展示。
+
+如果taxonomy=ifrs-full，必须同时显示taxonomy、concept、原始币种、
+期间、form和accession。TWD、JPY等金额只能按financial_amounts中的
+原币display_zh展示；不得自行换算为USD。annual、quarterly、
+half_year_ytd和nine_month_ytd不得混用。latest_6k_structured_core_present
+为false时必须说明最新6-K没有可靠结构化核心指标，不得从新闻摘要猜测。
 
 必须区分：
 

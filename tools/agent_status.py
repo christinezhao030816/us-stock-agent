@@ -461,6 +461,9 @@ def build_specialist_envelope(agent_role: str, run_result: Any) -> str:
             )
         if isinstance(freshness, dict):
             envelope["fundamental_freshness"] = freshness
+        evidence = metrics.get("fundamental_evidence")
+        if isinstance(evidence, dict):
+            envelope["fundamental_evidence"] = evidence
 
     return json.dumps(
         envelope,
@@ -520,6 +523,17 @@ def extract_top_level_fundamental_freshness(
         freshness = payload.get("fundamental_freshness")
         if isinstance(freshness, dict):
             return freshness
+    return None
+
+
+def extract_top_level_fundamental_evidence(
+    run_result: Any,
+) -> dict[str, Any] | None:
+    payloads, _ = collect_tool_results(run_result)
+    for payload in reversed(payloads.get("fundamental_analysis", [])):
+        evidence = payload.get("fundamental_evidence")
+        if isinstance(evidence, dict):
+            return evidence
     return None
 
 

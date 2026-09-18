@@ -268,6 +268,28 @@ class FreshnessRuleTests(unittest.TestCase):
         self.assertNotIn("最新财务数据", report)
         self.assertIn("不得用于正常的当前基本面结论", report)
 
+    def test_stale_report_preserves_negative_recency_warning(self) -> None:
+        freshness = {
+            "analysis_as_of": "2026-09-10",
+            "facts": [],
+            "summary": {
+                "fundamental_freshness_status": "stale",
+                "current_analysis_usable": False,
+                "fresh_fact_count": 0,
+                "caution_fact_count": 0,
+                "stale_fact_count": 1,
+                "unknown_freshness_count": 0,
+            },
+        }
+        report = freshness_banner(
+            "这些历史数据不能被称为“最近一期”，"
+            "也不得将其称为最新财务数据。",
+            freshness,
+        )
+        self.assertIn("不能被称为“当前有效期间”", report)
+        self.assertIn("不得将其称为当前有效财务数据", report)
+        self.assertNotIn("不能被称为“历史期间", report)
+
     def test_missing_date_is_unknown(self) -> None:
         self.assertEqual(
             _fact(period_end=None)["freshness_status"],

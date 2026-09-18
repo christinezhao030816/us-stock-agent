@@ -172,8 +172,9 @@ def _record_anchor(record: Any) -> str | None:
         for item in concepts:
             if not item.get("concept"):
                 continue
+            taxonomy = item.get("taxonomy") or "us-gaap"
             anchor = (
-                f"facts.us-gaap.{item['concept']}.units."
+                f"facts.{taxonomy}.{item['concept']}.units."
                 f"{item.get('unit') or 'USD'}"
                 f" period={item.get('start') or 'instant'}..{item.get('end')}"
             )
@@ -185,14 +186,16 @@ def _record_anchor(record: Any) -> str | None:
     unit = record.get("unit")
     if not concept:
         return None
-    anchor = f"facts.us-gaap.{concept}.units.{unit or 'USD'}"
+    taxonomy = record.get("taxonomy") or "us-gaap"
+    anchor = f"facts.{taxonomy}.{concept}.units.{unit or 'USD'}"
     anchor += f" period={record.get('start') or 'instant'}..{record.get('end')}"
     if record.get("accession"):
         anchor += f" accession={record['accession']}"
     comparison = record.get("comparison")
     if isinstance(comparison, dict) and comparison.get("concept"):
+        comparison_taxonomy = comparison.get("taxonomy") or taxonomy
         comparison_anchor = (
-            f"facts.us-gaap.{comparison['concept']}.units."
+            f"facts.{comparison_taxonomy}.{comparison['concept']}.units."
             f"{comparison.get('unit') or 'USD'}"
         )
         anchor += (
@@ -211,17 +214,31 @@ def build_fundamental_citations(metrics: dict[str, Any]) -> list[dict[str, Any]]
     amounts = metrics.get("financial_amounts")
     amounts = amounts if isinstance(amounts, dict) else {}
 
+    def amount_unit(amount: Any, fallback: str) -> str:
+        if not isinstance(amount, dict):
+            return fallback
+        currency = str(amount.get("currency") or "").strip()
+        scale = str(amount.get("scale") or "").strip()
+        return " ".join(part for part in (currency, scale) if part) or fallback
+
+    eps_value = metrics.get("eps_diluted_per_share")
+    if eps_value is None:
+        eps_value = metrics.get("eps_diluted_usd_per_share")
+    default_currency = str(metrics.get("reporting_currency") or "USD")
+    default_amount_unit = f"{default_currency} billion"
+
     definitions = [
-        ("revenue", amounts.get("revenue"), "USD billion", records.get("revenue")),
-        ("net_income", amounts.get("net_income"), "USD billion", records.get("net_income")),
-        ("EPS", metrics.get("eps_diluted_usd_per_share"), "USD/share", records.get("eps")),
-        ("operating_cash_flow", amounts.get("operating_cash_flow"), "USD billion", records.get("operating_cash_flow")),
-        ("capital_expenditure", amounts.get("capital_expenditure"), "USD billion", records.get("capital_expenditure")),
-        ("free_cash_flow", amounts.get("free_cash_flow"), "USD billion", records.get("free_cash_flow")),
-        ("cash", amounts.get("cash"), "USD billion", records.get("cash")),
-        ("total_assets", amounts.get("assets"), "USD billion", records.get("assets")),
-        ("total_debt", amounts.get("total_debt"), "USD billion", records.get("total_debt")),
-        ("equity", amounts.get("equity"), "USD billion", records.get("equity")),
+        ("revenue", amounts.get("revenue"), amount_unit(amounts.get("revenue"), default_amount_unit), records.get("revenue")),
+        ("net_income", amounts.get("net_income"), amount_unit(amounts.get("net_income"), default_amount_unit), records.get("net_income")),
+        ("EPS", eps_value, str(metrics.get("eps_unit") or f"{default_currency}/share"), records.get("eps")),
+        ("operating_cash_flow", amounts.get("operating_cash_flow"), amount_unit(amounts.get("operating_cash_flow"), default_amount_unit), records.get("operating_cash_flow")),
+        ("capital_expenditure", amounts.get("capital_expenditure"), amount_unit(amounts.get("capital_expenditure"), default_amount_unit), records.get("capital_expenditure")),
+        ("free_cash_flow", amounts.get("free_cash_flow"), amount_unit(amounts.get("free_cash_flow"), default_amount_unit), records.get("free_cash_flow")),
+        ("cash", amounts.get("cash"), amount_unit(amounts.get("cash"), default_amount_unit), records.get("cash")),
+        ("total_assets", amounts.get("assets"), amount_unit(amounts.get("assets"), default_amount_unit), records.get("assets")),
+        ("total_liabilities", amounts.get("liabilities"), amount_unit(amounts.get("liabilities"), default_amount_unit), records.get("liabilities")),
+        ("total_debt", amounts.get("total_debt"), amount_unit(amounts.get("total_debt"), default_amount_unit), records.get("total_debt")),
+        ("equity", amounts.get("equity"), amount_unit(amounts.get("equity"), default_amount_unit), records.get("equity")),
         ("reporting_period", metrics.get("income_period_end"), "date", records.get("revenue")),
         ("filing_date", filing_date, "date", records.get("revenue")),
         ("revenue_yoy", metrics.get("revenue_yoy_percent"), "percent", records.get("revenue_yoy")),

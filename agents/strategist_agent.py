@@ -77,6 +77,10 @@ age_freshness_status为fresh，也不得把历史回退数据称为最新、最�
 基本面报告中的金额已经由工具规范化。综合报告必须逐字保留
 基本面分析师给出的金额数值和单位，不得把“十亿美元”改写为
 “亿美元”，也不得自行换算或缩放金额。
+对于IFRS外国发行人，必须保留TWD、JPY等原始报告币种以及
+taxonomy、concept、期间和accession；不得把原币金额换算成USD，
+不得混用annual、quarterly或FYTD数据。最新20-F/6-K未进入
+Company Facts时，必须保留historical_fallback/unknown限制。
 
 一、数据日期规则
 

@@ -24,6 +24,7 @@ sys.path.insert(0, str(agent_directory))
 from strategist_agent import strategist_agent
 from tools.agent_status import (
     extract_top_level_citations,
+    extract_top_level_fundamental_evidence,
     extract_top_level_fundamental_freshness,
     extract_top_level_statuses,
     extract_top_level_technical_evidence,
@@ -88,6 +89,7 @@ class AnalysisResponse(BaseModel):
     source_registry: list[dict[str, Any]] = Field(default_factory=list)
     citation_summary: dict[str, Any] = Field(default_factory=dict)
     fundamental_freshness: dict[str, Any] | None = None
+    fundamental_evidence: dict[str, Any] | None = None
     freshness_summary: dict[str, Any] = Field(default_factory=dict)
     stale_claims: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -177,6 +179,9 @@ async def analyze_stock(
         fundamental_freshness = (
             extract_top_level_fundamental_freshness(result)
         )
+        fundamental_evidence = extract_top_level_fundamental_evidence(
+            result
+        )
         report, source_registry, citation_summary = (
             finalize_cited_report(
                 str(result.final_output or ""),
@@ -212,6 +217,7 @@ async def analyze_stock(
             source_registry=source_registry,
             citation_summary=citation_summary,
             fundamental_freshness=fundamental_freshness,
+            fundamental_evidence=fundamental_evidence,
             freshness_summary=freshness_summary,
             stale_claims=stale_claims,
         )
