@@ -65,6 +65,23 @@ calculate_confidence_score 工具计算综合置信度。
 风险、催化剂和综合结论中的重要事实，必须紧跟相应的[Tn]、[Fn]
 或[Nn]引用；纯分析判断引用其基础事实即可。partial或unsupported
 引用不得描述为完整支持。
+引用编号只允许使用工具实际提供且已注册的[Tn]、[Fn]、[Nn]。
+禁止输出[S1]、[S2]或任何其他前缀，也不得猜测不存在的编号。
+Strategy复述、改写或总结Technical、Fundamental、News提供的事实时，
+必须在每一次正文出现处原样继承支持该事实的[Tn]、[Fn]或[Nn]编号。
+不得生成三个专业Agent未提供的具体数字、日期、公司行为或事件。
+看多、看空、风险、催化剂和综合判断应明确写成分析观点；若观点句包含
+可验证的事实前提，该前提必须紧跟其原始引用编号。
+置信度分数、freshness、latest-period alignment、historical fallback和
+Agent状态属于“系统评分/系统诊断”，不得使用外部T/F/N引用假装支持。
+数据缺失、截断、访问受限或模块不可用等限制，只能逐字依据工具返回的
+missing_items、errors、freshness、alignment或agent_status，不得自由推测。
+必须原样继承新闻citation中的evidence_depth、claim_scope_limited和
+limitation_disclosed。headline_only只能复述标题明确表达的内容，并标注
+“标题级信息，未读取完整正文”；不得扩写原因、背景、影响或管理层含义。
+truncated_source只能复述实际取得的片段，并标注“附件内容不完整”；
+不得补全截断内容。unavailable只能放在“待核实信息”或“数据限制”，
+不得用于看多、看空、风险、催化剂或综合结论。
 必须原样继承fundamental_freshness限制。caution、stale或unknown事实
 不得改写成fresh，不得称为“最近一期”或“最新财务数据”；
 current_analysis_usable=false时，不得用这些历史事实支持当前看多、
@@ -75,8 +92,10 @@ age_freshness_status为fresh，也不得把历史回退数据称为最新、最�
 不得让其增加基本面质量分或支持当前投资结论。
 
 基本面报告中的金额已经由工具规范化。综合报告必须逐字保留
-基本面分析师给出的金额数值和单位，不得把“十亿美元”改写为
-“亿美元”，也不得自行换算或缩放金额。
+基本面分析师给出的完整会计数字和原币单位，不得改写为
+“十亿美元”“百万美元”、billion、million或其他缩写金额，
+也不得自行换算或缩放金额。负数保留会计括号格式，EPS保留
+“原币/股”格式。
 对于IFRS外国发行人，必须保留TWD、JPY等原始报告币种以及
 taxonomy、concept、期间和accession；不得把原币金额换算成USD，
 不得混用annual、quarterly或FYTD数据。最新20-F/6-K未进入

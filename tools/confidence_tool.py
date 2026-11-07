@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 
@@ -310,6 +310,22 @@ def calculate_confidence_score(
     else:
         confidence_level = "低"
 
+    input_fields = {
+        "analysis_date": analysis_date,
+        "technical_data_date": technical_data_date,
+        "news_data_date": news_data_date,
+        "fundamental_filing_date": fundamental_filing_date,
+        "technical_metrics_present": technical_metrics_present,
+        "fundamental_metrics_present": fundamental_metrics_present,
+        "relevant_news_count": relevant_news_count,
+        "has_sec_primary_text": has_sec_primary_text,
+        "has_independent_high_quality_news": has_independent_high_quality_news,
+        "has_data_read_errors": has_data_read_errors,
+        "sec_text_truncated": sec_text_truncated,
+        "signal_alignment": normalized_alignment,
+        "fundamental_freshness_status": freshness_class,
+        "fundamental_period_age_days": fundamental_period_age_days,
+    }
     return {
         "final_score": final_score,
         "raw_score": raw_score,
@@ -356,4 +372,21 @@ def calculate_confidence_score(
         "method": (
             "固定100分评分规则，并应用数据质量上限"
         ),
+        "internal_provenance": {
+            "input_fields": input_fields,
+            "formula_or_rule": "tools.confidence_tool.calculate_confidence_score/v1",
+            "result_fields": [
+                "final_score",
+                "raw_score",
+                "score_cap",
+                "confidence_level",
+                "score_breakdown",
+                "data_age_days",
+                "deductions",
+                "cap_reasons",
+            ],
+            "calculation_timestamp": datetime.now(timezone.utc).isoformat(),
+            "provenance_path": "tool_outputs.calculate_confidence_score[-1]",
+            "deterministic": True,
+        },
     }

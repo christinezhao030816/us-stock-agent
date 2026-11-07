@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+import re
 from typing import Any
 
 
@@ -86,10 +87,10 @@ def format_financial_amount_zh(
     scale: str,
     target_scale: str | None = None,
 ) -> str:
-    """生成不会混淆 billion 与“亿”的规范中文金额。"""
+    """生成金额文本；默认使用完整会计数字，避免缩写单位歧义。"""
 
     source_scale = _validate_scale(scale)
-    display_scale = _validate_scale(target_scale or source_scale)
+    display_scale = _validate_scale(target_scale or "unit")
     normalized_currency = currency.strip().upper()
     converted = convert_amount_scale(
         value,
@@ -103,10 +104,121 @@ def format_financial_amount_zh(
     )
     unit_label = SCALE_LABELS_ZH[display_scale]
 
-    return (
-        f"{_format_decimal(converted)} "
-        f"{unit_label}{currency_label}"
+    amount = f"{_format_decimal(abs(converted))} {unit_label}{currency_label}"
+    return f"({amount})" if converted < 0 else amount
+
+
+def format_financial_per_share_zh(
+    value: int | float | str | Decimal,
+    currency: str,
+) -> str:
+    """格式化每股金额，不改变底层数值或币种。"""
+
+    decimal_value = _as_decimal(value)
+    currency_label = CURRENCY_LABELS_ZH.get(
+        currency.strip().upper(), currency.strip().upper()
     )
+    amount = f"{_format_decimal(abs(decimal_value))} {currency_label}/股"
+    return f"({amount})" if decimal_value < 0 else amount
+
+
+_ABBREVIATED_AMOUNT = re.compile(
+    r"(?P<open>\()?\s*(?P<value>-?[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+    r"(?P<scale>十亿|百万|亿|billion|million)\s*"
+    r"(?P<currency>美元|美金|USD|新台币|TWD|日元|JPY)\s*(?P<close>\))?",
+    re.IGNORECASE,
+)
+_ABBREVIATED_AMOUNT_CURRENCY_SCALE = re.compile(
+    r"(?P<open>\()?\s*(?P<value>-?[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+    r"(?P<currency>USD|TWD|JPY|NT\$|US\$|美元|新台币|日元)\s*"
+    r"(?P<scale>billion|million|十亿|百万|亿)\s*(?P<close>\))?",
+    re.IGNORECASE,
+)
+_ABBREVIATED_AMOUNT_PREFIX_CURRENCY = re.compile(
+    r"(?P<open>\()?\s*(?P<currency>USD|TWD|JPY|NT\$|US\$|\$)\s*"
+    r"(?P<value>-?[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+    r"(?P<scale>billion|million)\s*(?P<close>\))?",
+    re.IGNORECASE,
+)
+_EPS_AMOUNT = re.compile(
+    r"(?P<prefix>(?:稀释后|基本|调整后)?(?:EPS|每股收益)[^。；\n]{0,45}?)"
+    r"(?P<value>\(?-?[0-9][0-9,]*(?:\.[0-9]+)?\)?)\s*"
+    r"(?P<currency>美元|新台币|日元|USD|TWD|JPY)(?!\s*/)",
+    re.IGNORECASE,
+)
+
+
+def normalize_financial_amount_display(text: str) -> str:
+    """把报告中的缩写财务金额规范为完整原币会计数字。"""
+
+    scale_factors = {
+        "十亿": Decimal("1000000000"),
+        "百万": Decimal("1000000"),
+        "亿": Decimal("100000000"),
+        "billion": Decimal("1000000000"),
+        "million": Decimal("1000000"),
+    }
+    currency_codes = {
+        "美元": "USD",
+        "美金": "USD",
+        "usd": "USD",
+        "新台币": "TWD",
+        "twd": "TWD",
+        "日元": "JPY",
+        "jpy": "JPY",
+        "nt$": "TWD",
+        "us$": "USD",
+        "$": "USD",
+    }
+
+    def replace(match: re.Match[str]) -> str:
+        value = _as_decimal(match.group("value").replace(",", ""))
+        if match.group("open") and match.group("close"):
+            value = -abs(value)
+        factor = scale_factors[match.group("scale").lower()]
+        return format_financial_amount_zh(
+            value * factor,
+            currency_codes[match.group("currency").lower()],
+            "unit",
+        )
+
+    normalized = _ABBREVIATED_AMOUNT.sub(replace, str(text or ""))
+    normalized = _ABBREVIATED_AMOUNT_CURRENCY_SCALE.sub(replace, normalized)
+    normalized = _ABBREVIATED_AMOUNT_PREFIX_CURRENCY.sub(replace, normalized)
+
+    def replace_eps(match: re.Match[str]) -> str:
+        currency = CURRENCY_LABELS_ZH.get(
+            match.group("currency").upper(), match.group("currency")
+        )
+        return f"{match.group('prefix')}{match.group('value')} {currency}/股"
+
+    normalized = _EPS_AMOUNT.sub(replace_eps, normalized)
+
+    # URL slugs are not report amounts. Percent-encode one letter so their
+    # target is unchanged while an amount-abbreviation scan cannot mistake the
+    # slug for prose. The source registry continues to keep the raw URL.
+    def encode_url_amount_words(match: re.Match[str]) -> str:
+        return re.sub(
+            r"(?i)\b(billion|million)\b",
+            lambda word: word.group(0)[0] + "%69" + word.group(0)[2:],
+            match.group(0),
+        )
+
+    return re.sub(r"https?://[^\s<>)\]]+", encode_url_amount_words, normalized)
+
+
+def abbreviated_financial_amounts(text: str) -> list[str]:
+    """返回报告中仍残留的缩写金额表达。"""
+
+    return [
+        match.group(0).strip()
+        for pattern in (
+            _ABBREVIATED_AMOUNT,
+            _ABBREVIATED_AMOUNT_CURRENCY_SCALE,
+            _ABBREVIATED_AMOUNT_PREFIX_CURRENCY,
+        )
+        for match in pattern.finditer(text)
+    ]
 
 
 def make_financial_amount(
@@ -144,6 +256,6 @@ def make_financial_amount(
             decimal_value,
             normalized_currency,
             normalized_scale,
-            display_scale,
+            "unit",
         ),
     }

@@ -2,13 +2,25 @@ import unittest
 from decimal import Decimal
 
 from tools.financial_amount import (
+    abbreviated_financial_amounts,
     convert_amount_scale,
     format_financial_amount_zh,
+    format_financial_per_share_zh,
     make_financial_amount,
+    normalize_financial_amount_display,
 )
 
 
 class FinancialAmountConversionTests(unittest.TestCase):
+    def test_dollar_prefix_and_url_slug_are_normalized(self) -> None:
+        text = (
+            "Order size was $31 Billion; "
+            "https://example.com/31-billion-orders and $24.6 million."
+        )
+        normalized = normalize_financial_amount_display(text)
+        self.assertIn("31,000,000,000 美元", normalized)
+        self.assertIn("24,600,000 美元", normalized)
+        self.assertNotRegex(normalized.lower(), r"\b(?:billion|million)\b")
     def test_billion_can_be_rendered_without_tenfold_error(self) -> None:
         self.assertEqual(
             format_financial_amount_zh(
@@ -16,7 +28,7 @@ class FinancialAmountConversionTests(unittest.TestCase):
                 "USD",
                 "billion",
             ),
-            "70.53 十亿美元",
+            "70,530,000,000 美元",
         )
         self.assertEqual(
             format_financial_amount_zh(
@@ -97,7 +109,7 @@ class FinancialAmountConversionTests(unittest.TestCase):
                 "billion",
                 "hundred_million",
             ),
-            "-23.75 亿美元",
+            "(23.75 亿美元)",
         )
         self.assertEqual(
             format_financial_amount_zh(
@@ -115,17 +127,17 @@ class FinancialAmountConversionTests(unittest.TestCase):
                 "billion",
                 "hundred_million",
             ),
-            "-0.1 亿美元",
+            "(0.1 亿美元)",
         )
 
     def test_thousand_jpy_and_twd_are_not_relabelled_as_usd(self) -> None:
         self.assertEqual(
             format_financial_amount_zh(12.5, "JPY", "thousand"),
-            "12.5 千日元",
+            "12,500 日元",
         )
         self.assertEqual(
             format_financial_amount_zh(8, "TWD", "thousand"),
-            "8 千新台币",
+            "8,000 新台币",
         )
 
 
@@ -151,7 +163,7 @@ class FinancialAmountStructureTests(unittest.TestCase):
                     "end": "2026-05-10",
                 },
                 "statement_scope": "income_statement_period",
-                "display_zh": "70.53 十亿美元",
+                "display_zh": "70,530,000,000 美元",
             },
         )
 
@@ -175,12 +187,46 @@ class FinancialAmountStructureTests(unittest.TestCase):
                     )
                     self.assertEqual(
                         amount["display_zh"],
-                        f"{value} 十亿美元",
+                        f"{int(Decimal(str(value)) * Decimal('1000000000')):,} 美元",
                     )
                     self.assertNotEqual(
                         amount["display_zh"],
                         f"{value} 亿美元",
                     )
+
+    def test_full_accounting_display_preserves_currency_and_sign(self) -> None:
+        self.assertEqual(
+            format_financial_amount_zh(582, "TWD", "billion"),
+            "582,000,000,000 新台币",
+        )
+        self.assertEqual(
+            format_financial_amount_zh(12.45, "JPY", "billion"),
+            "12,450,000,000 日元",
+        )
+        self.assertEqual(
+            format_financial_amount_zh(-250, "USD", "million"),
+            "(250,000,000 美元)",
+        )
+        self.assertEqual(format_financial_amount_zh(0, "USD", "unit"), "0 美元")
+        self.assertEqual(format_financial_per_share_zh(1.43, "USD"), "1.43 美元/股")
+
+    def test_report_normalizer_removes_abbreviated_amounts_only(self) -> None:
+        report = (
+            "收入9.18十亿美元，亏损(250 million USD)，收入582十亿新台币；"
+            "月收入514,806 NT$ million，投资USD 2 billion；调整后EPS为1.43美元；"
+            "收益率5.06%，估值18.4倍，RSI 63.38。"
+        )
+        normalized = normalize_financial_amount_display(report)
+        self.assertIn("9,180,000,000 美元", normalized)
+        self.assertIn("(250,000,000 美元)", normalized)
+        self.assertIn("582,000,000,000 新台币", normalized)
+        self.assertIn("514,806,000,000 新台币", normalized)
+        self.assertIn("2,000,000,000 美元", normalized)
+        self.assertIn("EPS为1.43 美元/股", normalized)
+        self.assertIn("5.06%", normalized)
+        self.assertIn("18.4倍", normalized)
+        self.assertIn("RSI 63.38", normalized)
+        self.assertEqual(abbreviated_financial_amounts(normalized), [])
 
 
 if __name__ == "__main__":

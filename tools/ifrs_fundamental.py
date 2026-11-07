@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from tools.financial_amount import make_financial_amount
+from tools.financial_amount import format_financial_per_share_zh, make_financial_amount
 from tools.financial_freshness import analysis_date, build_structured_freshness
 
 
@@ -682,6 +682,9 @@ def build_ifrs_fundamental_metrics(
         "financial_amounts": amounts,
         "eps_diluted_per_share": eps,
         "eps_unit": f"{currency}/shares",
+        "eps_display_zh": (
+            format_financial_per_share_zh(eps, currency) if eps is not None else None
+        ),
         "eps_diluted_usd_per_share": eps if currency == "USD" else None,
         "source_url": source_url,
         "source_records": sources,

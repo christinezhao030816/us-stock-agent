@@ -31,7 +31,12 @@ from tools.agent_status import (
     warnings_from_statuses,
 )
 from tools.citation_registry import finalize_cited_report
+from tools.financial_amount import normalize_financial_amount_display
 from tools.financial_freshness import freshness_banner
+from tools.internal_provenance import (
+    build_internal_provenance,
+    internal_traceability_summary,
+)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -92,6 +97,8 @@ class AnalysisResponse(BaseModel):
     fundamental_evidence: dict[str, Any] | None = None
     freshness_summary: dict[str, Any] = Field(default_factory=dict)
     stale_claims: list[dict[str, Any]] = Field(default_factory=list)
+    internal_provenance: list[dict[str, Any]] = Field(default_factory=list)
+    internal_traceability_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 @app.get("/", include_in_schema=False)
@@ -182,6 +189,13 @@ async def analyze_stock(
         fundamental_evidence = extract_top_level_fundamental_evidence(
             result
         )
+        internal_provenance = build_internal_provenance(
+            result,
+            agent_statuses=agent_statuses,
+            fundamental_freshness=fundamental_freshness,
+            technical_evidence=technical_evidence,
+            citations=citations,
+        )
         report, source_registry, citation_summary = (
             finalize_cited_report(
                 str(result.final_output or ""),
@@ -194,6 +208,7 @@ async def analyze_stock(
             fundamental_freshness,
             language=request.language,
         )
+        report = normalize_financial_amount_display(report)
         freshness_summary = (
             fundamental_freshness.get("summary", {})
             if isinstance(fundamental_freshness, dict)
@@ -220,6 +235,10 @@ async def analyze_stock(
             fundamental_evidence=fundamental_evidence,
             freshness_summary=freshness_summary,
             stale_claims=stale_claims,
+            internal_provenance=internal_provenance,
+            internal_traceability_summary=internal_traceability_summary(
+                internal_provenance
+            ),
         )
 
     except Exception:

@@ -11,6 +11,8 @@ from tools.citation_registry import (
     build_technical_citations,
     citation_summary,
     finalize_cited_report,
+    inherit_strategy_citations,
+    repair_cited_financial_values,
     save_source_registry,
 )
 
@@ -36,6 +38,27 @@ def _supported_claim(claim_id: str = "F1") -> dict:
 
 
 class CitationMappingTests(unittest.TestCase):
+    def test_strategy_restatement_inherits_supported_claim_id(self) -> None:
+        claim = _supported_claim("F1")
+        report = "基本面摘要：Revenue was 100 billion USD。"
+        repaired = inherit_strategy_citations(report, [claim])
+        self.assertIn("[F1]", repaired)
+
+    def test_system_score_does_not_inherit_external_citation(self) -> None:
+        claim = {**_supported_claim("F1"), "value": 78, "claim_text": "score 78"}
+        repaired = inherit_strategy_citations("系统评分为78分。", [claim])
+        self.assertNotIn("[F1]", repaired)
+
+    def test_cited_financial_mismatch_is_repaired_from_structured_claim(self) -> None:
+        claim = {
+            **_supported_claim("F4"),
+            "value": 1826.18,
+            "unit": "TWD billion",
+        }
+        repaired = repair_cited_financial_values(
+            "经营现金流：919,770,000,000 新台币。[F4]", [claim]
+        )
+        self.assertIn("1,826,180,000,000 新台币", repaired)
     def test_fundamental_metric_keeps_sec_concept_mapping(self) -> None:
         record = {
             "concept": "Revenues",
@@ -171,6 +194,32 @@ class CitationMappingTests(unittest.TestCase):
         self.assertEqual(claims[0]["source_anchor"], "Apple announces product")
         self.assertEqual(claims[0]["source_name"], "Reuters")
         self.assertEqual(claims[0]["source_url"], "https://example.com/apple")
+        self.assertEqual(claims[0]["evidence_depth"], "fully_supported")
+        self.assertFalse(claims[0]["claim_scope_limited"])
+
+    def test_headline_only_is_supported_only_with_limited_scope(self) -> None:
+        claims = build_news_citations(
+            {
+                "get_stock_news": [
+                    {
+                        "symbol": "AAPL",
+                        "articles": [
+                            {
+                                "headline": "Apple announces product",
+                                "summary": None,
+                                "source": "Example",
+                                "created_at": "2026-09-09T10:00:00Z",
+                                "url": "https://example.com/apple",
+                                "symbols": ["AAPL"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        self.assertEqual(claims[0]["citation_status"], "supported")
+        self.assertEqual(claims[0]["evidence_depth"], "headline_only")
+        self.assertIn("未读取完整正文", claims[0]["claim_text"])
 
     def test_news_without_url_or_description_is_not_supported(self) -> None:
         claims = build_news_citations(
@@ -275,7 +324,7 @@ class CitationIntegrityTests(unittest.TestCase):
 
     def test_ids_are_unique_refs_resolve_and_sources_are_used(self) -> None:
         claims = [_supported_claim("F1"), _supported_claim("F2")]
-        report, registry, summary = finalize_cited_report("结论", claims)
+        report, registry, summary = finalize_cited_report("结论[F1][F2]", claims)
         self.assertEqual(len({item["claim_id"] for item in claims}), 2)
         self.assertFalse(summary["duplicate_claim_ids"])
         self.assertFalse(summary["unresolved_report_citations"])
@@ -284,6 +333,36 @@ class CitationIntegrityTests(unittest.TestCase):
         self.assertIn("[F1]", report)
         self.assertIn("[F2]", report)
         self.assertEqual(len(registry), 1)
+
+    def test_strategy_s_markers_are_mapped_only_to_real_sec_filing_claims(self) -> None:
+        filings = []
+        for index in (1, 2):
+            filings.append(
+                {
+                    **_supported_claim(f"N{index}"),
+                    "agent": "news",
+                    "claim_type": "sec_filing_event",
+                }
+            )
+        report, registry, summary = finalize_cited_report(
+            "公司提交修订文件[S1]，随后公布季报[S2]；未知引用[S3]。",
+            filings,
+        )
+        self.assertIn("[N1]", report)
+        self.assertIn("[N2]", report)
+        self.assertNotIn("[S1]", report)
+        self.assertNotIn("[S2]", report)
+        self.assertNotIn("[S3]", report)
+        self.assertEqual({item for source in registry for item in source["claim_ids"]}, {"N1", "N2"})
+        self.assertTrue(summary["citation_integrity"])
+
+    def test_source_registry_excludes_claims_unused_by_report_body(self) -> None:
+        claims = [_supported_claim("F1"), _supported_claim("F2")]
+        report, registry, summary = finalize_cited_report("仅使用收入[F1]", claims)
+        self.assertIn("[F1]", report)
+        self.assertNotIn("[F2]", report)
+        self.assertEqual(registry[0]["claim_ids"], ["F1"])
+        self.assertEqual(summary["citation_required_claims"], 1)
 
     def test_duplicate_ids_fail_integrity(self) -> None:
         claims = [_supported_claim("F1"), _supported_claim("F1")]

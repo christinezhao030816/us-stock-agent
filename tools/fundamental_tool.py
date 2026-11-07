@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from tools.financial_amount import make_financial_amount
+from tools.financial_amount import format_financial_per_share_zh, make_financial_amount
 from tools.financial_freshness import (
     analysis_date,
     build_structured_freshness,
@@ -1000,6 +1000,9 @@ def get_fundamental_metrics(
         "filing_date": target.get("filed"),
         "financial_amounts": financial_amounts,
         "eps_diluted_usd_per_share": eps,
+        "eps_display_zh": (
+            format_financial_per_share_zh(eps, "USD") if eps is not None else None
+        ),
         "source_url": source_url,
         "source_records": source_records,
         "analysis_as_of": as_of.isoformat(),

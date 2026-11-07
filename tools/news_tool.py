@@ -12,6 +12,7 @@ from tools.ticker_symbols import (
     symbol_aliases,
     ticker_mapping,
 )
+from tools.news_evidence import classify_article_evidence
 
 
 load_dotenv()
@@ -296,10 +297,10 @@ def get_stock_news(
             source_score=quality["score"],
         )
 
-        accepted_articles.append(
-            {
+        accepted_article = {
                 "headline": headline,
                 "summary": summary or None,
+                "article_body": None,
                 "source": source,
                 "source_quality": quality["label"],
                 "source_quality_level": quality["level"],
@@ -314,7 +315,13 @@ def get_stock_news(
                     f"Alpaca 将该新闻明确关联至 {symbol}"
                 ),
             }
+        accepted_article.update(
+            classify_article_evidence(
+                accepted_article,
+                company_match=symbol in article_symbols,
+            )
         )
+        accepted_articles.append(accepted_article)
 
     accepted_articles.sort(
         key=lambda article: (

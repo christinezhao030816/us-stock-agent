@@ -150,19 +150,19 @@ class FundamentalToolAmountIntegrationTests(unittest.TestCase):
         amounts = result["financial_amounts"]
         self.assertEqual(
             amounts["revenue"]["display_zh"],
-            "70.53 十亿美元",
+            "70,530,000,000 美元",
         )
         self.assertEqual(
             amounts["net_income"]["display_zh"],
-            "2.19 十亿美元",
+            "2,190,000,000 美元",
         )
         self.assertEqual(
             amounts["operating_cash_flow"]["display_zh"],
-            "11.13 十亿美元",
+            "11,130,000,000 美元",
         )
         self.assertEqual(
             amounts["assets"]["display_zh"],
-            "86.43 十亿美元",
+            "86,430,000,000 美元",
         )
         self.assertEqual(
             amounts["revenue"]["period"],

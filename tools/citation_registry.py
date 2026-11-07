@@ -8,15 +8,237 @@ from tools.financial_freshness import (
     build_filing_freshness,
     evaluate_fact_freshness,
 )
+from tools.financial_amount import format_financial_amount_zh
+from tools.news_evidence import (
+    classify_article_evidence,
+    classify_filing_evidence,
+    scoped_news_claim_text,
+)
 
 
 VALID_CITATION_STATUSES = {"supported", "partial", "unsupported"}
 _CLAIM_MARKER = re.compile(r"\[([TFN]\d+)\]")
+_ANY_CLAIM_MARKER = re.compile(r"\[([A-Z]\d+)\]")
 _URL_PATTERN = re.compile(r"https?://[^\s<>\])]+")
 _SOURCE_HEADING = re.compile(
     r"^#{1,3}\s+(?:\d+\.\s*)?(?:来源与证据|Sources and Evidence)\s*$",
     re.IGNORECASE,
 )
+_SYSTEM_ONLY_TERMS = (
+    "置信度", "最终分数", "原始分数", "得分", "数据质量上限", "freshness",
+    "新鲜度", "historical_fallback", "agent状态", "系统评分", "系统诊断",
+)
+
+
+def _claim_value_tokens(claim: dict[str, Any]) -> set[str]:
+    value = claim.get("value")
+    tokens: set[str] = set()
+    if isinstance(value, bool) or value is None:
+        return tokens
+    if isinstance(value, (int, float)):
+        tokens.update({str(value), f"{value:,}"})
+        unit = str(claim.get("unit") or "").lower()
+        factor = 1_000_000_000 if "billion" in unit else 1_000_000 if "million" in unit else 1
+        full = float(value) * factor
+        if full.is_integer():
+            tokens.add(f"{int(full):,}")
+            if full < 0:
+                tokens.add(f"({abs(int(full)):,}")
+    else:
+        token = str(value).strip()
+        if len(token) >= 4:
+            tokens.add(token)
+    for key in ("period_or_as_of_date", "source_date"):
+        if claim.get(key):
+            tokens.add(str(claim[key])[:10])
+    return tokens
+
+
+def inherit_strategy_citations(report: str, citations: list[dict[str, Any]]) -> str:
+    """Attach source-agent IDs to markerless verbatim fact restatements.
+
+    Matching is deliberately conservative: a supported claim needs an exact
+    structured value/date token and a metric or claim-text keyword in the same
+    line. System diagnostics are excluded because they use internal provenance.
+    """
+
+    aliases = {
+        "current_price": ("价格", "收盘", "current price"),
+        "return_20d": ("20日", "20-day"),
+        "sma20": ("sma20", "20日均线"),
+        "sma50": ("sma50", "50日均线"),
+        "sma200": ("sma200", "200日均线"),
+        "rsi14": ("rsi",),
+        "revenue": ("收入", "营收", "revenue"),
+        "net_income": ("净利润", "net income", "profit"),
+        "operating_cash_flow": ("经营现金流", "operating cash flow"),
+        "capital_expenditure": ("资本支出", "资本开支", "capital expenditure"),
+        "free_cash_flow": ("自由现金流", "free cash flow"),
+        "total_assets": ("总资产", "资产", "total assets"),
+        "total_liabilities": ("总负债", "total liabilities"),
+        "total_debt": ("总债务", "债务", "total debt"),
+        "cash": ("现金", "cash"),
+        "EPS": ("eps", "每股收益"),
+        "filing_date": ("提交日期", "filing date"),
+        "reporting_period": ("报告期", "期间", "period"),
+        "support_20d": ("20日支撑",),
+        "resistance_20d": ("20日阻力",),
+        "support_60d": ("60日支撑",),
+        "resistance_60d": ("60日阻力",),
+    }
+    output: list[str] = []
+    for line in str(report or "").splitlines():
+        lowered = line.lower()
+        if _ANY_CLAIM_MARKER.search(line) or any(term in lowered for term in _SYSTEM_ONLY_TERMS):
+            output.append(line)
+            continue
+        matches: list[str] = []
+        claims_by_metric = {
+            str(item.get("metric_name") or ""): str(item.get("claim_id") or "")
+            for item in citations
+            if item.get("citation_status") == "supported"
+        }
+        if "价格低于20日均线" in line or "price below 20-day" in lowered:
+            matches.extend(
+                claims_by_metric.get(metric, "") for metric in ("current_price", "sma20")
+            )
+        if "rsi" in lowered:
+            matches.append(claims_by_metric.get("rsi14", ""))
+        if "历史高点" in line or "52周高" in line or "52-week high" in lowered:
+            matches.extend(
+                claims_by_metric.get(metric, "")
+                for metric in ("high_52_week", "distance_from_52_week_high")
+            )
+        for claim in citations:
+            if claim.get("citation_status") != "supported":
+                continue
+            tokens = _claim_value_tokens(claim)
+            metric = str(claim.get("metric_name") or "")
+            metric_aliases = aliases.get(metric, ())
+            period_scope_match = (
+                metric == "operating_cash_flow"
+                and any(term in lowered for term in ("累计期间", "财年初至今", "单季度现金流"))
+            )
+            if not period_scope_match and (
+                not tokens or not any(token.lower() in lowered for token in tokens)
+            ):
+                continue
+            claim_words = re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z]{4,}", str(claim.get("claim_text") or ""))
+            if period_scope_match or (metric_aliases and any(alias in lowered for alias in metric_aliases)):
+                matches.append(str(claim.get("claim_id")))
+            elif any(word.lower() in lowered for word in claim_words[:6]):
+                matches.append(str(claim.get("claim_id")))
+        matches = list(dict.fromkeys(item for item in matches if item))
+        output.append(f"{line} {' '.join(f'[{item}]' for item in matches)}" if matches else line)
+    return "\n".join(output)
+
+
+def repair_cited_financial_values(report: str, citations: list[dict[str, Any]]) -> str:
+    """Replace a mismatched cited financial display with its structured value."""
+
+    by_id = {str(item.get("claim_id") or ""): item for item in citations}
+    amount = re.compile(
+        r"\(?-?\d[\d,]*(?:\.\d+)?\s*(?:美元|新台币|日元|USD|TWD|JPY)(?:\s*/\s*股)?\)?",
+        re.IGNORECASE,
+    )
+    lines: list[str] = []
+    for line in str(report or "").splitlines():
+        markers = _CLAIM_MARKER.findall(line)
+        repaired = line
+        if len(markers) == 1 and amount.search(line):
+            claim = by_id.get(markers[0]) or {}
+            value = claim.get("value")
+            unit = str(claim.get("unit") or "")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                parts = unit.split()
+                currency = parts[0].upper() if parts else ""
+                scale = "billion" if "billion" in unit.lower() else "million" if "million" in unit.lower() else "unit"
+                if currency in {"USD", "TWD", "JPY"} and "/share" not in unit.lower():
+                    expected = format_financial_amount_zh(value, currency, scale)
+                    existing = amount.search(line)
+                    if existing and existing.group(0) != expected:
+                        repaired = line[: existing.start()] + expected + line[existing.end() :]
+        lines.append(repaired)
+    return "\n".join(lines)
+
+
+def enforce_news_evidence_boundaries(
+    report: str,
+    citations: list[dict[str, Any]],
+) -> str:
+    """Render limited news evidence without allowing Strategy embellishment."""
+
+    by_id = {
+        str(item.get("claim_id") or ""): item
+        for item in citations
+        if item.get("agent") == "news"
+    }
+    limited = {
+        claim_id: item
+        for claim_id, item in by_id.items()
+        if item.get("evidence_depth") in {"headline_only", "truncated_source", "unavailable"}
+    }
+    if not limited:
+        return report
+
+    output: list[str] = []
+    represented: set[str] = set()
+    for line in str(report or "").splitlines():
+        marker_ids = _CLAIM_MARKER.findall(line)
+        limited_ids = [claim_id for claim_id in marker_ids if claim_id in limited]
+        if not limited_ids:
+            output.append(line)
+            continue
+        # Replace the entire mixed sentence. Keeping fragments risks leaving a
+        # causal or impact claim supported by the wrong source ID.
+        indentation = re.match(r"^\s*", line).group(0)
+        for claim_id in dict.fromkeys(marker_ids):
+            claim = by_id.get(claim_id)
+            if not claim:
+                continue
+            depth = str(claim.get("evidence_depth") or "fully_supported")
+            if depth == "unavailable":
+                output.append(
+                    f"{indentation}- 待核实信息（正文不可用）："
+                    f"{(claim.get('source_content') or {}).get('title') or claim.get('claim_text')}，"
+                    "该项不作为已确认新闻事实或投资结论依据。"
+                )
+            elif depth == "truncated_source":
+                content = claim.get("source_content") or {}
+                form = str(content.get("form") or "SEC").strip()
+                accession = str(content.get("accession_number") or "").strip()
+                identifier = f" {accession}" if accession else ""
+                output.append(
+                    f"{indentation}- 附件内容不完整，仅确认已读取片段："
+                    f"SEC {form} filing{identifier} [{claim_id}]"
+                )
+            else:
+                output.append(
+                    f"{indentation}- {claim.get('claim_text')} [{claim_id}]"
+                )
+            represented.add(claim_id)
+
+    missing = [claim_id for claim_id in limited if claim_id not in represented]
+    if missing:
+        output.extend(["", "### 标题级与待核实信息", ""])
+        for claim_id in missing:
+            claim = limited[claim_id]
+            if claim.get("evidence_depth") == "unavailable":
+                output.append(
+                    f"- {claim.get('claim_text')}，该项不作为已确认新闻事实或投资结论依据。"
+                )
+            elif claim.get("evidence_depth") == "truncated_source":
+                content = claim.get("source_content") or {}
+                form = str(content.get("form") or "SEC").strip()
+                accession = str(content.get("accession_number") or "").strip()
+                identifier = f" {accession}" if accession else ""
+                output.append(
+                    f"- 附件内容不完整，仅确认已读取片段："
+                    f"SEC {form} filing{identifier} [{claim_id}]"
+                )
+            else:
+                output.append(f"- {claim.get('claim_text')} [{claim_id}]")
+    return "\n".join(output)
 
 
 def _claim(
@@ -270,6 +492,8 @@ def build_fundamental_citations(metrics: dict[str, Any]) -> list[dict[str, Any]]
                 str(record.get("end") or "") if isinstance(record, dict) else ""
             ) or metrics.get("income_period_end")
             claim_value = raw_value
+            if metric_name == "EPS" and metrics.get("eps_display_zh"):
+                claim_value = metrics["eps_display_zh"]
         record_date = (
             str(record.get("filed") or "") if isinstance(record, dict) else ""
         ) or filing_date
@@ -477,21 +701,20 @@ def build_news_citations(payloads: dict[str, list[dict[str, Any]]]) -> list[dict
         date = str(article.get("created_at") or "").strip() or None
         symbols = article.get("symbols") or []
         company_match = canonical in symbols if canonical else bool(symbols)
-        status = (
-            "supported"
-            if title and description and url and date and company_match
-            else "partial" if title or url else "unsupported"
-        )
+        boundary = classify_article_evidence(article, company_match=company_match)
+        depth = boundary["evidence_depth"]
+        status = "supported" if depth in {"fully_supported", "headline_only"} else "unsupported"
         claim = _claim(
                 claim_id=claim_id,
                 agent="news",
                 claim_type="news_event",
                 metric_name="event",
-                claim_text=f"{title}: {description}" if description else title,
+                claim_text=scoped_news_claim_text(title, description, depth),
                 value={
                     "title": title,
                     "description": description or None,
                     "company_match": company_match,
+                    "evidence_depth": depth,
                 },
                 unit=None,
                 period_or_as_of_date=date,
@@ -505,6 +728,7 @@ def build_news_citations(payloads: dict[str, list[dict[str, Any]]]) -> list[dict
             )
         claim["company_or_ticker"] = canonical or None
         claim["publisher"] = claim["source_name"]
+        claim.update(boundary)
         claims.append(claim)
 
     filing_values = payloads.get("get_recent_sec_filing_texts", [])
@@ -518,6 +742,7 @@ def build_news_citations(payloads: dict[str, list[dict[str, Any]]]) -> list[dict
         date = str(filing.get("filing_date") or "").strip() or None
         primary = filing.get("primary_document")
         primary = primary if isinstance(primary, dict) else {}
+        boundary = classify_filing_evidence(filing)
         url = str(
             filing.get("filing_index_url")
             or primary.get("url")
@@ -526,33 +751,44 @@ def build_news_citations(payloads: dict[str, list[dict[str, Any]]]) -> list[dict
         ).strip() or None
         text_present = bool(str(primary.get("text") or "").strip())
         item_descriptions = filing.get("item_descriptions") or []
-        description = "; ".join(
-            str(item).strip() for item in item_descriptions if str(item).strip()
-        )
+        formatted_items: list[str] = []
+        for item in item_descriptions:
+            if isinstance(item, dict):
+                item_number = str(item.get("item") or "").strip()
+                item_text = str(item.get("description") or "").strip()
+                formatted = ": ".join(part for part in (item_number, item_text) if part)
+            else:
+                formatted = str(item).strip()
+            if formatted:
+                formatted_items.append(formatted)
+        description = "、".join(formatted_items)
         if not description and text_present:
             description = " ".join(
                 str(primary.get("text") or "").split()
             )[:300]
+        depth = boundary["evidence_depth"]
         status = (
             "supported"
-            if accession and form and date and url and text_present and not primary.get("error")
-            else "partial" if accession or url else "unsupported"
+            if accession and form and date and url and depth in {"fully_supported", "truncated_source"}
+            else "unsupported"
+        )
+        base_text = (
+            f"SEC {form} filing {accession}: {description}"
+            if description else f"SEC {form} filing {accession}"
         )
         claim = _claim(
                 claim_id=claim_id,
                 agent="news",
                 claim_type="sec_filing_event",
                 metric_name="filing_event",
-                claim_text=(
-                    f"SEC {form} filing {accession}: {description}"
-                    if description else f"SEC {form} filing {accession}"
-                ),
+                claim_text=scoped_news_claim_text(base_text, "", depth),
                 value={
                     "title": f"SEC {form} filing",
                     "description": description or None,
                     "form": form,
                     "accession_number": accession,
                     "company_match": True,
+                    "evidence_depth": depth,
                 },
                 unit=None,
                 period_or_as_of_date=str(filing.get("report_date") or date or "") or None,
@@ -571,16 +807,16 @@ def build_news_citations(payloads: dict[str, list[dict[str, Any]]]) -> list[dict
             filing_data.get("symbol") or canonical or ""
         ) or None
         claim["publisher"] = "SEC EDGAR"
+        claim.update(boundary)
         claims.append(claim)
 
     if not claims:
-        claims.append(
-            _claim(
+        missing_claim = _claim(
                 claim_id="N1",
                 agent="news",
                 claim_type="news_event",
                 metric_name="event",
-                claim_text=f"{canonical or 'ticker'} 无可验证新闻或申报事件",
+                claim_text=f"待核实信息（正文不可用）：{canonical or 'ticker'} 无可验证新闻或申报事件",
                 value=None,
                 unit=None,
                 period_or_as_of_date=str(news.get("news_period_end_utc") or "") or None,
@@ -592,7 +828,16 @@ def build_news_citations(payloads: dict[str, list[dict[str, Any]]]) -> list[dict
                 evidence_path=None,
                 citation_status="unsupported",
             )
+        missing_claim.update(
+            {
+                "evidence_depth": "unavailable",
+                "full_text_available": False,
+                "claim_scope_limited": True,
+                "limitation_disclosed": True,
+                "source_content": {},
+            }
         )
+        claims.append(missing_claim)
     return claims
 
 
@@ -717,24 +962,50 @@ def finalize_cited_report(
     report = "\n".join(report_lines).rstrip()
 
     ids = {str(claim.get("claim_id")) for claim in citations}
-    allowed_urls = {str(claim.get("source_url")) for claim in citations if claim.get("source_url")}
+    sec_filing_ids = [
+        str(claim.get("claim_id"))
+        for claim in citations
+        if claim.get("agent") == "news"
+        and claim.get("claim_type") == "sec_filing_event"
+    ]
 
-    cleaned = _CLAIM_MARKER.sub(
-        lambda match: match.group(0) if match.group(1) in ids else "[未解析引用已移除]",
-        str(report or ""),
-    )
+    def repair_marker(match: re.Match[str]) -> str:
+        claim_id = match.group(1)
+        if claim_id in ids:
+            return match.group(0)
+        if claim_id.startswith("S"):
+            ordinal = int(claim_id[1:])
+            if 1 <= ordinal <= len(sec_filing_ids):
+                return f"[{sec_filing_ids[ordinal - 1]}]"
+        return "（未注册引用已移除）"
+
+    cleaned = _ANY_CLAIM_MARKER.sub(repair_marker, str(report or ""))
+    cleaned = inherit_strategy_citations(cleaned, citations)
+    cleaned = repair_cited_financial_values(cleaned, citations)
+    cleaned = enforce_news_evidence_boundaries(cleaned, citations)
+    body_ids = set(_CLAIM_MARKER.findall(cleaned))
+    body_citations = [
+        claim
+        for claim in citations
+        if str(claim.get("claim_id")) in body_ids
+    ]
+    allowed_urls = {
+        str(claim.get("source_url"))
+        for claim in body_citations
+        if claim.get("source_url")
+    }
     cleaned = _URL_PATTERN.sub(
         lambda match: match.group(0) if match.group(0).rstrip(".,") in allowed_urls else "[未验证URL已移除]",
         cleaned,
     ).rstrip()
 
-    registry = build_source_registry(citations)
+    registry = build_source_registry(body_citations)
     title = "Sources and Evidence" if language == "en" else "来源与证据"
     fact_title = "Claim-level evidence" if language == "en" else "逐项事实证据"
     source_title = "Source registry" if language == "en" else "来源注册表"
     strategy_title = "Strategy evidence basis" if language == "en" else "综合策略事实依据"
     lines = [cleaned, "", f"## {title}", "", f"### {fact_title}", ""]
-    for claim in citations:
+    for claim in body_citations:
         marker = f"[{claim['claim_id']}]"
         status = claim.get("citation_status")
         lines.append(f"- {marker} {claim.get('claim_text')}（{status}）")
@@ -746,7 +1017,7 @@ def finalize_cited_report(
     ):
         markers = " ".join(
             f"[{claim['claim_id']}]"
-            for claim in citations
+            for claim in body_citations
             if claim.get("agent") == agent and claim.get("citation_status") == "supported"
         )
         lines.append(f"- {label}: {markers or '无完整支持项'}")
@@ -759,7 +1030,7 @@ def finalize_cited_report(
             f"{entry.get('source_date') or '日期缺失'}; {url}; claims: {claim_ids}"
         )
     final_report = "\n".join(lines).strip() + "\n"
-    summary = citation_summary(citations, final_report, registry)
+    summary = citation_summary(body_citations, final_report, registry)
     return final_report, registry, summary
 
 

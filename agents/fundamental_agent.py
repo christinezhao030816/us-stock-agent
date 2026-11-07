@@ -83,10 +83,11 @@ statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
 
 例如：
 
-- value=70.53、scale=billion、display_zh=70.53 十亿美元时，
-  只能写“70.53 十亿美元”，不得写“70.53 亿美元”。
-- 如确需使用“亿美元”，必须由工具预先提供该 display_zh；
-  模型不得自行把 billion 换成“亿”。
+- value=9.18、scale=billion、display_zh=9,180,000,000 美元时，
+  只能写“9,180,000,000 美元”。
+- 不得在最终报告中写“十亿美元”“百万美元”、billion或million。
+- 负数必须保留工具提供的会计括号格式；EPS使用“美元/股”等原币
+  每股单位。百分比、倍数和RSI不是金额，不得套用金额格式。
 
 名称以 _billion_usd 结尾的旧数值字段只用于比率和交叉检查，
 不得直接用于自然语言金额展示。

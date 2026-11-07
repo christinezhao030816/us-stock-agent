@@ -384,11 +384,41 @@ def evaluate_news_status(
         missing.append("news_query")
     elif article_count == 0:
         missing.append("filtered_news_articles")
+    else:
+        articles = news.get("articles") or []
+        headline_only_count = sum(
+            item.get("evidence_depth") == "headline_only"
+            for item in articles
+            if isinstance(item, dict)
+        )
+        unavailable_count = sum(
+            item.get("evidence_depth") == "unavailable"
+            for item in articles
+            if isinstance(item, dict)
+        )
+        if headline_only_count:
+            missing.append(f"headline_only_articles:{headline_only_count}")
+        if unavailable_count:
+            missing.append(f"unavailable_articles:{unavailable_count}")
 
     if filings is None:
         missing.append("sec_filing_query")
     elif filing_count == 0:
         missing.append("recent_sec_filings")
+    else:
+        filing_items = filings.get("filings") or []
+        truncated_count = sum(
+            bool((item.get("primary_document") or {}).get("truncated"))
+            or any(
+                bool(exhibit.get("truncated"))
+                for exhibit in item.get("exhibits") or []
+                if isinstance(exhibit, dict)
+            )
+            for item in filing_items
+            if isinstance(item, dict)
+        )
+        if truncated_count:
+            missing.append(f"truncated_sec_sources:{truncated_count}")
 
     core_present = article_count > 0 or filing_count > 0
 
