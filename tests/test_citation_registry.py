@@ -59,6 +59,55 @@ class CitationMappingTests(unittest.TestCase):
             "经营现金流：919,770,000,000 新台币。[F4]", [claim]
         )
         self.assertIn("1,826,180,000,000 新台币", repaired)
+
+    def test_phase7a_abbv_multi_marker_line_uses_exact_f2_value(self) -> None:
+        citations = [
+            {
+                **_supported_claim("F2"),
+                "metric_name": "net_income",
+                "value": 4.218,
+                "unit": "USD billion",
+                "claim_text": "AbbVie net income = 4,218,000,000 美元",
+            },
+            {
+                **_supported_claim("F6"),
+                "metric_name": "free_cash_flow",
+                "value": 13.98,
+                "unit": "USD billion",
+            },
+            {
+                **_supported_claim("F16"),
+                "metric_name": "net_margin",
+                "value": 0.2424,
+                "unit": "ratio",
+            },
+        ]
+        report = (
+            "净利润为4,220,000,000 美元，净利润率为24.24%。"
+            "[F2][F6][F16]"
+        )
+
+        repaired = repair_cited_financial_values(report, citations)
+
+        self.assertIn("4,218,000,000 美元", repaired)
+        self.assertNotIn("4,220,000,000 美元", repaired)
+        self.assertIn("[F2][F6][F16]", repaired)
+
+    def test_phase7a_cat_f5_uses_exact_registry_value(self) -> None:
+        claim = {
+            **_supported_claim("F5"),
+            "metric_name": "capital_expenditure",
+            "value": 2.012,
+            "unit": "USD billion",
+        }
+
+        repaired = repair_cited_financial_values(
+            "同期资本支出为2,010,000,000 美元。[F5]",
+            [claim],
+        )
+
+        self.assertIn("2,012,000,000 美元", repaired)
+        self.assertNotIn("2,010,000,000 美元", repaired)
     def test_fundamental_metric_keeps_sec_concept_mapping(self) -> None:
         record = {
             "concept": "Revenues",

@@ -730,11 +730,13 @@ def _news_scope_consistent(sentence: str, claim: dict[str, Any]) -> bool:
         title = normalize_financial_amount_display(
             str((claim.get("source_content") or {}).get("title") or "")
         ).strip().lower()
+        normalized_sentence = re.sub(r"[;；]+\s*", "，", lowered)
+        normalized_title = re.sub(r"[;；]+\s*", "，", title)
         return (
             "标题级信息" in sentence
             and "未读取完整正文" in sentence
-            and bool(title)
-            and title in lowered
+            and bool(normalized_title)
+            and normalized_title in normalized_sentence
         )
     if depth == "truncated_source":
         return "附件内容不完整" in sentence and "已读取片段" in sentence

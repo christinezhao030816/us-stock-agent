@@ -82,6 +82,10 @@ limitation_disclosed。headline_only只能复述标题明确表达的内容，�
 truncated_source只能复述实际取得的片段，并标注“附件内容不完整”；
 不得补全截断内容。unavailable只能放在“待核实信息”或“数据限制”，
 不得用于看多、看空、风险、催化剂或综合结论。
+新闻citation中的strategy_eligible=false时，无论evidence_depth名称如何，
+该新闻都只能进入消息面摘要、待核实信息或数据限制，不得用于看多、
+看空、风险、催化剂、估值或综合结论。不得删除整个消息面模块；应保留
+实际取得的标题、摘要或片段，并原样披露strategy_limitation_reason。
 必须原样继承fundamental_freshness限制。caution、stale或unknown事实
 不得改写成fresh，不得称为“最近一期”或“最新财务数据”；
 current_analysis_usable=false时，不得用这些历史事实支持当前看多、

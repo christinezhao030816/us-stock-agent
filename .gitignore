@@ -45,6 +45,7 @@ htmlcov/
 evaluation/raw_outputs/
 evaluation/regression_outputs/
 evaluation/*_regression/
+evaluation/phase7a_p0_regression/
 evaluation/confidence_calibration/
 evaluation/technical_evidence/
 evaluation/*_results.csv

@@ -521,7 +521,7 @@ def _amount(
     statement_scope: str,
 ) -> dict[str, Any] | None:
     return make_financial_amount(
-        _billions(value),
+        None if value is None else value / 1_000_000_000,
         currency="USD",
         scale="billion",
         period=period,

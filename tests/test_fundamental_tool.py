@@ -49,6 +49,26 @@ def _instant_record(value: float, *, end: str) -> dict:
 
 
 class FundamentalToolAmountIntegrationTests(unittest.TestCase):
+    def test_phase7a_abbv_net_income_keeps_exact_sec_value(self) -> None:
+        amount = fundamental_tool._amount(
+            4_218_000_000,
+            period={"start": "2026-07-01", "end": "2026-09-30"},
+            statement_scope="income_statement_period",
+        )
+
+        self.assertEqual(amount["value"], 4.218)
+        self.assertEqual(amount["display_zh"], "4,218,000,000 美元")
+
+    def test_phase7a_cat_capex_keeps_exact_sec_value(self) -> None:
+        amount = fundamental_tool._amount(
+            2_012_000_000,
+            period={"start": "2026-01-01", "end": "2026-09-30"},
+            statement_scope="fiscal_year_to_date_cash_flow",
+        )
+
+        self.assertEqual(amount["value"], 2.012)
+        self.assertEqual(amount["display_zh"], "2,012,000,000 美元")
+
     def test_sec_values_are_exposed_with_canonical_display_and_scope(
         self,
     ) -> None:

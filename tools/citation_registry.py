@@ -28,6 +28,22 @@ _SYSTEM_ONLY_TERMS = (
     "置信度", "最终分数", "原始分数", "得分", "数据质量上限", "freshness",
     "新鲜度", "historical_fallback", "agent状态", "系统评分", "系统诊断",
 )
+_FINANCIAL_METRIC_ALIASES = {
+    "revenue": ("收入", "营收", "revenue"),
+    "net_income": ("净利润", "net income", "profit"),
+    "operating_cash_flow": ("经营现金流", "operating cash flow"),
+    "capital_expenditure": ("资本支出", "资本开支", "capital expenditure", "capex"),
+    "free_cash_flow": ("自由现金流", "free cash flow"),
+    "cash": ("现金", "cash"),
+    "total_assets": ("总资产", "total assets"),
+    "total_liabilities": ("总负债", "total liabilities"),
+    "total_debt": ("总债务", "debt"),
+    "equity": ("股东权益", "equity"),
+}
+_STRATEGY_CORE_SECTION_TERMS = (
+    "看多", "看空", "风险", "催化", "综合判断", "最终结论", "投资建议",
+    "bull", "bear", "risk", "catalyst", "final synthesis", "recommendation",
+)
 
 
 def _claim_value_tokens(claim: dict[str, Any]) -> set[str]:
@@ -145,21 +161,134 @@ def repair_cited_financial_values(report: str, citations: list[dict[str, Any]]) 
     for line in str(report or "").splitlines():
         markers = _CLAIM_MARKER.findall(line)
         repaired = line
-        if len(markers) == 1 and amount.search(line):
-            claim = by_id.get(markers[0]) or {}
+        candidates: list[dict[str, Any]] = []
+        lowered = line.lower()
+        for marker in dict.fromkeys(markers):
+            claim = by_id.get(marker) or {}
             value = claim.get("value")
             unit = str(claim.get("unit") or "")
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                parts = unit.split()
-                currency = parts[0].upper() if parts else ""
-                scale = "billion" if "billion" in unit.lower() else "million" if "million" in unit.lower() else "unit"
-                if currency in {"USD", "TWD", "JPY"} and "/share" not in unit.lower():
-                    expected = format_financial_amount_zh(value, currency, scale)
-                    existing = amount.search(line)
-                    if existing and existing.group(0) != expected:
-                        repaired = line[: existing.start()] + expected + line[existing.end() :]
+            parts = unit.split()
+            currency = parts[0].upper() if parts else ""
+            if not (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and currency in {"USD", "TWD", "JPY"}
+                and "/share" not in unit.lower()
+            ):
+                continue
+            aliases = _FINANCIAL_METRIC_ALIASES.get(
+                str(claim.get("metric_name") or ""),
+                (),
+            )
+            alias_positions = [
+                lowered.find(alias.lower())
+                for alias in aliases
+                if lowered.find(alias.lower()) >= 0
+            ]
+            candidates.append(
+                {
+                    "claim": claim,
+                    "currency": currency,
+                    "unit": unit,
+                    "alias_position": min(alias_positions) if alias_positions else None,
+                }
+            )
+        for existing in reversed(list(amount.finditer(line))):
+            matching = [
+                item for item in candidates
+                if item["alias_position"] is not None
+            ]
+            if matching:
+                selected = min(
+                    matching,
+                    key=lambda item: abs(
+                        existing.start() - int(item["alias_position"])
+                    ),
+                )
+            elif len(candidates) == 1:
+                selected = candidates[0]
+            else:
+                continue
+            claim = selected["claim"]
+            unit = selected["unit"]
+            scale = (
+                "billion" if "billion" in unit.lower()
+                else "million" if "million" in unit.lower()
+                else "unit"
+            )
+            expected = format_financial_amount_zh(
+                claim["value"],
+                selected["currency"],
+                scale,
+            )
+            if existing.group(0) != expected:
+                repaired = (
+                    repaired[: existing.start()]
+                    + expected
+                    + repaired[existing.end() :]
+                )
         lines.append(repaired)
     return "\n".join(lines)
+
+
+def _report_safe_news_text(value: Any) -> str:
+    """Keep a sourced headline atomic without changing its values."""
+
+    return re.sub(r"[;；]+\s*", "，", str(value or "")).strip()
+
+
+def _news_strategy_eligible(claim: dict[str, Any]) -> bool:
+    explicit = claim.get("strategy_eligible")
+    if isinstance(explicit, bool):
+        return explicit
+    depth = str(claim.get("evidence_depth") or "fully_supported")
+    return depth == "fully_supported" and bool(
+        claim.get("full_text_available", True)
+    )
+
+
+def _render_limited_news_claim(
+    claim_id: str,
+    claim: dict[str, Any],
+    indentation: str = "",
+) -> str:
+    depth = str(claim.get("evidence_depth") or "fully_supported")
+    content = claim.get("source_content") or {}
+    if depth == "unavailable":
+        title = _report_safe_news_text(
+            content.get("title") or claim.get("claim_text")
+        )
+        return (
+            f"{indentation}- 待核实信息（正文不可用）：{title}，"
+            "该项不作为已确认新闻事实或投资结论依据。"
+        )
+    if depth == "truncated_source":
+        form = str(content.get("form") or "SEC").strip()
+        accession = str(content.get("accession_number") or "").strip()
+        identifier = f" {accession}" if accession else ""
+        return (
+            f"{indentation}- 附件内容不完整，仅确认已读取片段："
+            f"SEC {form} filing{identifier} [{claim_id}]"
+        )
+    if depth == "headline_only":
+        title = _report_safe_news_text(
+            content.get("title")
+            or str(claim.get("claim_text") or "").removeprefix(
+                "标题级信息，未读取完整正文："
+            )
+        )
+        return (
+            f"{indentation}- 标题级信息，未读取完整正文："
+            f"{title} [{claim_id}]"
+        )
+    title = _report_safe_news_text(content.get("title"))
+    summary = _report_safe_news_text(content.get("summary"))
+    detail = f"：{summary}" if summary else ""
+    return (
+        f"{indentation}- 待核实摘要（未读取完整正文）："
+        f"{title}{detail} [{claim_id}]，该项仅作数据限制披露，"
+        "不作为核心投资结论依据。"
+    )
 
 
 def enforce_news_evidence_boundaries(
@@ -177,17 +306,33 @@ def enforce_news_evidence_boundaries(
         claim_id: item
         for claim_id, item in by_id.items()
         if item.get("evidence_depth") in {"headline_only", "truncated_source", "unavailable"}
+        or not _news_strategy_eligible(item)
     }
     if not limited:
         return report
 
     output: list[str] = []
     represented: set[str] = set()
+    gated_from_core: set[str] = set()
+    current_section = ""
     for line in str(report or "").splitlines():
+        heading = re.match(r"^\s*#{1,6}\s+(.*)$", line)
+        if heading:
+            current_section = re.sub(
+                r"[*_`]", "", heading.group(1)
+            ).strip().lower()
+            output.append(line)
+            continue
         marker_ids = _CLAIM_MARKER.findall(line)
         limited_ids = [claim_id for claim_id in marker_ids if claim_id in limited]
         if not limited_ids:
             output.append(line)
+            continue
+        if any(
+            term in current_section
+            for term in _STRATEGY_CORE_SECTION_TERMS
+        ):
+            gated_from_core.update(limited_ids)
             continue
         # Replace the entire mixed sentence. Keeping fragments risks leaving a
         # causal or impact claim supported by the wrong source ID.
@@ -196,48 +341,26 @@ def enforce_news_evidence_boundaries(
             claim = by_id.get(claim_id)
             if not claim:
                 continue
-            depth = str(claim.get("evidence_depth") or "fully_supported")
-            if depth == "unavailable":
-                output.append(
-                    f"{indentation}- 待核实信息（正文不可用）："
-                    f"{(claim.get('source_content') or {}).get('title') or claim.get('claim_text')}，"
-                    "该项不作为已确认新闻事实或投资结论依据。"
+            output.append(
+                _render_limited_news_claim(
+                    claim_id,
+                    claim,
+                    indentation,
                 )
-            elif depth == "truncated_source":
-                content = claim.get("source_content") or {}
-                form = str(content.get("form") or "SEC").strip()
-                accession = str(content.get("accession_number") or "").strip()
-                identifier = f" {accession}" if accession else ""
-                output.append(
-                    f"{indentation}- 附件内容不完整，仅确认已读取片段："
-                    f"SEC {form} filing{identifier} [{claim_id}]"
-                )
-            else:
-                output.append(
-                    f"{indentation}- {claim.get('claim_text')} [{claim_id}]"
-                )
+            )
             represented.add(claim_id)
 
     missing = [claim_id for claim_id in limited if claim_id not in represented]
-    if missing:
+    if missing or gated_from_core:
         output.extend(["", "### 标题级与待核实信息", ""])
         for claim_id in missing:
             claim = limited[claim_id]
-            if claim.get("evidence_depth") == "unavailable":
-                output.append(
-                    f"- {claim.get('claim_text')}，该项不作为已确认新闻事实或投资结论依据。"
-                )
-            elif claim.get("evidence_depth") == "truncated_source":
-                content = claim.get("source_content") or {}
-                form = str(content.get("form") or "SEC").strip()
-                accession = str(content.get("accession_number") or "").strip()
-                identifier = f" {accession}" if accession else ""
-                output.append(
-                    f"- 附件内容不完整，仅确认已读取片段："
-                    f"SEC {form} filing{identifier} [{claim_id}]"
-                )
-            else:
-                output.append(f"- {claim.get('claim_text')} [{claim_id}]")
+            output.append(_render_limited_news_claim(claim_id, claim))
+        if gated_from_core:
+            output.append(
+                "- 系统已将受限新闻从看多、看空、风险、催化剂及综合判断中移除，"
+                "这些信息不作为核心投资结论依据。"
+            )
     return "\n".join(output)
 
 
@@ -834,6 +957,8 @@ def build_news_citations(payloads: dict[str, list[dict[str, Any]]]) -> list[dict
                 "full_text_available": False,
                 "claim_scope_limited": True,
                 "limitation_disclosed": True,
+                "strategy_eligible": False,
+                "strategy_limitation_reason": "unavailable",
                 "source_content": {},
             }
         )

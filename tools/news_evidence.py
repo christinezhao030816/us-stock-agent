@@ -33,11 +33,21 @@ def classify_article_evidence(
         depth = "headline_only"
     else:
         depth = "unavailable"
+    strategy_eligible = depth == "fully_supported" and bool(body)
+    limitation_reason = (
+        None
+        if strategy_eligible
+        else "full_text_unavailable"
+        if depth == "fully_supported"
+        else depth
+    )
     return {
         "evidence_depth": depth,
         "full_text_available": bool(body),
         "claim_scope_limited": depth != "fully_supported",
         "limitation_disclosed": depth != "fully_supported",
+        "strategy_eligible": strategy_eligible,
+        "strategy_limitation_reason": limitation_reason,
         "source_content": {
             "title": title or None,
             "summary": summary or None,
@@ -66,11 +76,16 @@ def classify_filing_evidence(filing: dict[str, Any]) -> dict[str, Any]:
         depth = "truncated_source"
     else:
         depth = "fully_supported"
+    strategy_eligible = depth == "fully_supported" and full_text_available
     return {
         "evidence_depth": depth,
         "full_text_available": full_text_available,
         "claim_scope_limited": depth != "fully_supported",
         "limitation_disclosed": depth != "fully_supported",
+        "strategy_eligible": strategy_eligible,
+        "strategy_limitation_reason": (
+            None if strategy_eligible else depth
+        ),
         "source_content": {
             "form": filing.get("form"),
             "filing_date": filing.get("filing_date"),

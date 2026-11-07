@@ -25,7 +25,175 @@ def _article(headline: str, summary=None, url="https://example.com/item") -> dic
     }
 
 
+PHASE7A_HEADLINE_FIXTURES = (
+    "Caterpillar Acquires John Fabick Tractor; Financial Terms Not Disclosed",
+    "Costco Wholesale Reported Net Sales Of $24.50B For The Retail Month Of October, "
+    "An Increase Of 12.6 Percent From $21.75B Last Year; Net Sales For The First "
+    "Nine Weeks Were $54.52B, An Increase Of 12.8 Percent From $48.33B Last Year",
+    "Reported Sunday, Johnson & Johnson Says Impella Outcomes Depend On Patient "
+    "Selection, Timing And Post-Procedural Care, Citing Lower Mortality In Three "
+    "TCT Analyses Versus CHIP-BCIS3; PROTECT IV Results Expected 2027",
+    "Watching Nvidia; Hunterbrook Media Issues Report Titled, “The Comprehensive "
+    "Guide to the Bank of Nvidia”",
+    "Toyota Motor Raises FY2027 GAAP EPS Guidance from $17.08 to $18.84 vs $21.80 "
+    "Est; Lowers FY2027 Sales Guidance from $338.850B to $336.087B vs $337.600B Est",
+    "Toyota Interim Dividend ¥50/Share vs ¥45 YoY; Maintains FY Dividend Forecast At ¥100",
+)
+
+
 class NewsEvidenceBoundaryTests(unittest.TestCase):
+    def test_phase7a_headline_claims_remain_atomic_and_keep_title_values(self) -> None:
+        for title in PHASE7A_HEADLINE_FIXTURES:
+            with self.subTest(title=title):
+                claims = build_news_citations(
+                    {
+                        "get_stock_news": [
+                            {"symbol": "TEST", "articles": [_article(title)]}
+                        ]
+                    }
+                )
+                repaired = enforce_news_evidence_boundaries(
+                    "管理层因此能够保证长期利润增长。[N1]",
+                    claims,
+                )
+                inventory = build_claim_inventory("TEST", repaired, claims, [])
+                occurrences = [
+                    item
+                    for item in inventory
+                    if item["registry_claim_id"] == "N1"
+                ]
+                self.assertEqual(len(occurrences), 1)
+                self.assertIn("标题级信息，未读取完整正文", repaired)
+                self.assertNotIn("保证长期利润增长", repaired)
+                for token in __import__("re").findall(
+                    r"(?:[$¥]\d[\d.]*B?|\d+(?:\.\d+)?\s*Percent|FY\d{4}|2027)",
+                    title,
+                    flags=__import__("re").IGNORECASE,
+                ):
+                    self.assertIn(token, repaired)
+
+    def test_phase7a_summary_without_full_text_is_not_strategy_eligible(self) -> None:
+        claims = build_news_citations(
+            {
+                "get_stock_news": [
+                    {
+                        "symbol": "XOM",
+                        "articles": [
+                            {
+                                **_article(
+                                    "These Analysts Boost Their Forecasts On ExxonMobil",
+                                    summary=(
+                                        "ExxonMobil beat estimates; shares fell 2.9%."
+                                    ),
+                                ),
+                                "symbols": ["XOM"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(claims[0]["evidence_depth"], "fully_supported")
+        self.assertFalse(claims[0]["full_text_available"])
+        self.assertFalse(claims[0]["strategy_eligible"])
+        self.assertEqual(
+            claims[0]["strategy_limitation_reason"],
+            "full_text_unavailable",
+        )
+
+    def test_phase7a_ineligible_news_cannot_remain_in_core_strategy_sections(self) -> None:
+        headline = build_news_citations(
+            {
+                "get_stock_news": [
+                    {
+                        "symbol": "XOM",
+                        "articles": [
+                            {
+                                **_article(
+                                    "UBS Maintains Buy on ExxonMobil, Raises Price Target to $213"
+                                ),
+                                "symbols": ["XOM"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )[0]
+        summary_only = build_news_citations(
+            {
+                "get_stock_news": [
+                    {
+                        "symbol": "SONY",
+                        "articles": [
+                            {
+                                **_article(
+                                    "Sony Boosts Guidance as Profit Jumps",
+                                    summary="Quarterly net profit increased 44%.",
+                                ),
+                                "symbols": ["SONY"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )[0]
+        summary_only["claim_id"] = "N2"
+        report = """## 7. 看多因素
+分析师目标价上调，构成核心看多催化剂。[N1]
+Sony利润增长证明长期增长确定。[N2]
+
+## 4. 消息面摘要
+消息模块保留受限信息。[N1][N2]
+
+## 9. 综合判断
+上述新闻支持买入。[N1][N2]
+"""
+
+        repaired = enforce_news_evidence_boundaries(
+            report,
+            [headline, summary_only],
+        )
+        core_bull = repaired.split("## 7. 看多因素", 1)[1].split(
+            "## 4. 消息面摘要", 1
+        )[0]
+        core_final = repaired.split("## 9. 综合判断", 1)[1].split(
+            "### 标题级与待核实信息", 1
+        )[0]
+
+        self.assertNotIn("[N1]", core_bull)
+        self.assertNotIn("[N2]", core_bull)
+        self.assertNotIn("[N1]", core_final)
+        self.assertNotIn("[N2]", core_final)
+        self.assertIn("## 4. 消息面摘要", repaired)
+        self.assertIn("标题级与待核实信息", repaired)
+        self.assertIn("不作为核心投资结论依据", repaired)
+
+    def test_phase7a_truncated_source_is_gated_out_of_core_conclusion(self) -> None:
+        claim = {
+            "claim_id": "N1",
+            "agent": "news",
+            "citation_status": "partial",
+            "evidence_depth": "truncated_source",
+            "claim_text": "附件内容不完整，仅确认已读取片段：SEC 8-K filing",
+            "strategy_eligible": False,
+            "strategy_limitation_reason": "truncated_source",
+            "source_content": {
+                "form": "8-K",
+                "accession_number": "0001-26-000001",
+            },
+        }
+        repaired = enforce_news_evidence_boundaries(
+            "## 综合判断\n附件证明全年利润确定增长。[N1]",
+            [claim],
+        )
+
+        core = repaired.split("## 综合判断", 1)[1].split(
+            "### 标题级与待核实信息", 1
+        )[0]
+        self.assertNotIn("[N1]", core)
+        self.assertNotIn("全年利润确定增长", repaired)
+        self.assertIn("附件内容不完整", repaired)
     def test_headline_only_cannot_be_expanded(self) -> None:
         claims = build_news_citations(
             {"get_stock_news": [{"symbol": "TEST", "articles": [_article("Company raises guidance")]}]}
