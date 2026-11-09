@@ -10,7 +10,7 @@
 
 > **Sample Mode** 内置脱敏示例，不依赖 API 或网络，适合面试现场演示。页面始终明确标注 `Sample Report`，不会冒充实时数据。Render 免费实例可能冷启动；Live Mode 失败时可一键切换到 Sample Mode。
 
-![PARALLAX Dashboard overview](docs/screenshots/dashboard-overview.jpg)
+![Parallax Research light dashboard](docs/screenshots/dashboard-light-overview.jpg)
 
 ## Why this exists
 
@@ -117,9 +117,11 @@ Dashboard 右栏使用 `Research Usability`，不把 Confidence 命名为准确�
 - 可展开的 Claim citations、Source Registry 和 Internal provenance
 - Live API 冷启动提示、120 秒超时与一键 Sample fallback
 
-![Agent analysis view](docs/screenshots/agent-analysis.jpg)
+![Agent analysis view](docs/screenshots/dashboard-agent-expanded.jpg)
 
-![Evidence and citation drawer](docs/screenshots/evidence-citations.jpg)
+![Evidence and citation drawer](docs/screenshots/dashboard-evidence-drawer.jpg)
+
+![Responsive mobile dashboard](docs/screenshots/dashboard-mobile.jpg)
 
 ## Known limitations
 
