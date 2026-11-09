@@ -1,160 +1,191 @@
-# US Stock Multi-Agent Analysis System
+# PARALLAX · Evidence-aware U.S. Stock Research
 
-一个基于 Python、FastAPI 和 OpenAI Agents SDK 构建的美股多 Agent 分析系统。
+> 输入一个美股 ticker，由 Technical、Fundamental、News 和 Strategy Agent 生成带证据、数据新鲜度与风险披露的研究报告。
 
-用户输入股票代码后，系统会分别调用技术面、基本面和消息面 Agent，最后由策略 Agent 汇总结果，并通过网页生成结构化中文分析报告。
+[![Interview Release](https://img.shields.io/badge/release-interview-CEFF00?style=flat-square&labelColor=111513)](./parallax_prototype.html)
+[![Tests](https://img.shields.io/badge/tests-134%20passed-2FBF71?style=flat-square&labelColor=111513)](#quick-start)
+[![Python](https://img.shields.io/badge/python-3.13-F4F1E8?style=flat-square&labelColor=111513)](https://www.python.org/)
 
-## 项目功能
+[Live Demo](https://parallax-stock-research.onrender.com) · [GitHub](https://github.com/christinezhao030816/us-stock-agent) · [Open local Dashboard](./parallax_prototype.html)
 
-- 技术面分析
-  - 5日、20日和60日收益率
-  - 20日、50日和200日均线
-  - RSI
-  - 成交量变化
-  - 支撑位与阻力位
+> **Sample Mode** 内置脱敏示例，不依赖 API 或网络，适合面试现场演示。页面始终明确标注 `Sample Report`，不会冒充实时数据。Render 免费实例可能冷启动；Live Mode 失败时可一键切换到 Sample Mode。
 
-- 基本面分析
-  - 营业收入和净利润
-  - 收入及净利润同比增长
-  - 经营现金流、资本支出和自由现金流
-  - 现金、债务、资产和股东权益
-  - 支持从 SEC 申报及附件中补充外国发行人的数据
+![PARALLAX Dashboard overview](docs/screenshots/dashboard-overview.jpg)
 
-- 消息面分析
-  - 获取近期相关新闻
-  - 股票代码相关性筛选
-  - 新闻去重
-  - 来源质量提示
-  - 结合 SEC 8-K、6-K 和相关附件进行核验
+## Why this exists
 
-- 综合分析
-  - 对比技术面、基本面和消息面信号
-  - 识别不同分析之间的支持与矛盾
-  - 输出正面因素、风险因素和后续关注事项
-  - 根据数据完整性、时效性和来源质量计算置信度
+### Problem
 
-## 系统架构
+| 现实问题 | 常见后果 |
+|---|---|
+| 行情、财务、新闻和申报分散在不同来源 | 手工整理耗时，口径容易不一致 |
+| 最新 filing 与结构化事实更新时间不同 | 旧数据可能被误写成“最新” |
+| 普通 LLM 缺少可验证输入约束 | 可能生成无来源结论或扩大新闻含义 |
+| 外国发行人使用 IFRS 与本币 | 期间、taxonomy、币种容易被混用 |
 
-本项目采用“总 Agent 统筹、专业 Agent 独立分析”的架构。三个专业 Agent 不直接互相调用或共享内部数据，而是分别完成自己的分析，再将结果返回给策略 Agent。
+### Solution
+
+- **四 Agent 架构**：Technical、Fundamental、News 独立取证，Strategy 只负责综合。
+- **真实数据链路**：Yahoo/yfinance、SEC Company Facts / EDGAR、Alpaca News。
+- **Claim-level citations**：重要事实映射到 `[Tn]`、`[Fn]`、`[Nn]`。
+- **Freshness + alignment**：同时检查数据年龄与是否落后于最新适用申报。
+- **IFRS support**：保留 taxonomy、concept、期间和 TWD/JPY 等原始币种。
+- **Internal provenance**：系统评分、Agent 状态和数据限制拥有独立计算溯源。
+- **Independent evaluation**：技术指标从 raw bars 独立复算，财务与新闻从冻结证据核验。
+
+## Architecture
 
 ```mermaid
-flowchart TD
-    U["用户输入股票代码"] --> API["FastAPI /analyze"]
-    API --> S["策略 Agent"]
-
-    S -->|并行调用| T["技术面 Agent"]
-    S -->|并行调用| F["基本面 Agent"]
-    S -->|并行调用| N["消息面 Agent"]
-
-    T --> Y["Yahoo Finance / yfinance"]
-    F --> CF["SEC Company Facts"]
-    F --> ED["SEC EDGAR 申报与附件"]
-    N --> AN["Alpaca News / Benzinga"]
-    N --> ED
-
-    T --> M["专业分析结果汇总"]
-    F --> M
-    N --> M
-
-    M --> C["置信度评分工具"]
-    C --> R["策略 Agent 生成综合报告"]
-    R --> UI["网页模块化展示"]
+flowchart LR
+    U[User ticker] --> API[FastAPI Orchestrator]
+    API --> T[Technical Agent]
+    API --> F[Fundamental Agent]
+    API --> N[News Agent]
+    T --> S[Strategy Agent]
+    F --> S
+    N --> S
+    S --> E[Evidence Registry]
+    S --> P[Internal Provenance]
+    E --> D[Dashboard]
+    P --> D
 ```
 
-三个专业 Agent 之间保持数据边界：
+| Layer | Responsibility |
+|---|---|
+| Technical | 同一份日频 OHLCV 计算收益率、SMA、RSI、成交量和支撑阻力 |
+| Fundamental | SEC/XBRL 指标选择、IFRS 映射、币种/期间保留、新鲜度判断 |
+| News | 公司匹配、标题/正文边界、SEC filing 事件与来源质量 |
+| Strategy | 继承专业 Agent 的事实与限制，输出风险、催化剂和综合判断 |
+| Evidence | Source registry、claim citations、raw bars、internal provenance |
 
-- 技术面 Agent 只处理价格、均线、RSI、成交量和支撑阻力数据。
-- 基本面 Agent 只处理 SEC 财务指标、现金流、资本结构及申报正文。
-- 消息面 Agent 只处理新闻、来源质量、相关性和近期 SEC 重大事项。
-- 策略 Agent 是唯一负责比较三类结果、识别矛盾并形成最终判断的 Agent。
+## Evaluation · Baseline v1
 
-## Agent 调用与任务规划
+正式指标来自冻结的 **19-stock Baseline v1**，不是 Sample Mode，也不使用尚未验收的 Phase 7B 结果。
 
-### 1. 请求接收与任务创建
+| Metric | 19-stock Baseline v1 |
+|---|---:|
+| External Factual Accuracy | **97.25%** |
+| Numerical Accuracy | **98.43%** |
+| Citation Accuracy | **97.07%** |
+| Internal Traceability | **100%** |
+| Technical Agent success | **19 / 19** |
+| Mean latency | **≈ 75.8 s** |
+| Median latency | **≈ 75.9 s** |
 
-FastAPI 接收用户输入的股票代码，完成格式验证后，将分析任务交给策略 Agent。策略 Agent 的指令明确要求必须完成技术面、基本面和消息面三项分析，不能跳过其中任何一项。
+| Evaluation stage | Scope | Result |
+|---|---|---|
+| Early batch testing | 100+ companies | 平均约 **53 秒/公司**，用于发现稳定性和覆盖问题 |
+| Formal Baseline v1 | 19 diverse stocks | 平均约 **75.8 秒**，中位约 **75.9 秒**；保存完整证据并独立评测 |
 
-### 2. 专业 Agent 并行执行
+准确率、引用质量与完整度分别报告；项目不以一个“万能分数”掩盖失败案例。
 
-策略 Agent 启用了并行工具调用，因此三个专业 Agent 可以同时开始工作，而不是按照“技术面 → 基本面 → 消息面”的顺序依次等待。
+## Quality iterations
 
-这种设计可以缩短整体分析时间。三个专业 Agent 之间不存在直接依赖，因此某个 Agent 不需要等待另一个 Agent 的结果。
+| Phase | What changed |
+|---|---|
+| P0 | 修复财务金额单位与十倍换算错误 |
+| P1 | 按数据源规范化 BRK.B 等 ticker，并基于真实数据判断 Agent 状态 |
+| P2 | 保存 raw bars、公式和技术证据，实现独立复算 |
+| P3 | 建立 claim-level citations 与 source registry |
+| P4 | 加入 freshness 与 latest-period alignment，阻止旧数据冒充最新 |
+| P5 | 支持外国发行人 IFRS taxonomy、原始币种和期间粒度 |
+| P6 | 冻结 Rubric v3、独立 ground truth 与 Confidence calibration |
+| P7 | 修复数值生成与 headline/truncated 新闻的 evidence boundary；仍在继续完善 |
 
-### 3. 各 Agent 的工具调用
+## Product insight
 
-- 技术面 Agent 调用行情工具，获取历史日线、收益率、均线、RSI、成交量及支撑阻力。
-- 基本面 Agent 优先调用 SEC Company Facts 获取结构化财务数据；对于部分外国发行人或 XBRL 数据不足的公司，再通过 SEC 申报正文和附件补充信息。
-- 消息面 Agent 获取 Alpaca News 返回的新闻，执行股票相关性筛选和去重，同时读取近期 SEC 申报以补充一手公司信息。
+Confidence calibration 带来一个关键结论：
 
-每个专业 Agent 只能依据工具返回的数据进行分析。如果字段缺失、正文截断或请求失败，Agent 必须明确披露，不能把缺失值视为零，也不能自行虚构数据。
+> 旧 Confidence Score 更能解释 **Current Research Usability**（数据是否新、是否完整、Agent 是否 partial），而不能代表报告的事实准确率。
 
-### 4. 结果汇总与矛盾识别
+因此后续产品设计会拆成两个清晰维度：
 
-三个专业 Agent 完成后，将各自的文字报告返回策略 Agent。策略 Agent 负责：
+1. **Content Verification** — 事实、数字、引用本身是否正确且可追溯。
+2. **Current Research Usability** — 数据是否足够新、完整，并能支持当前投资研究。
 
-- 比较三类分析是否相互支持；
-- 识别短期技术信号与长期基本面之间的矛盾；
-- 区分新闻催化剂、媒体观点和 SEC 一手事实；
-- 汇总正面因素、风险因素和后续关注事项；
-- 说明不同数据源之间的日期差异。
+Dashboard 右栏使用 `Research Usability`，不把 Confidence 命名为准确率。
 
-### 5. 置信度评分
+## Dashboard
 
-策略 Agent 根据专业分析结果调用置信度评分工具。评分主要考虑：
+单文件 [`parallax_prototype.html`](./parallax_prototype.html) 无 CDN、远程字体或图片依赖，可直接双击打开。
 
-- 技术面指标完整度；
-- 基本面指标完整度；
-- 新闻数量和来源质量；
-- SEC 正文是否成功读取；
-- 数据时效性；
-- 三类信号的一致程度；
-- 是否存在读取错误或正文截断。
+- Live / Sample 双模式
+- AAPL、GOOGL、SONY、TSM Watchlist
+- 四 Agent 状态、结论、限制与引用数
+- Fresh / Warning / Stale 和 latest-period alignment
+- 风险、催化剂与 Research Usability
+- 可展开的 Claim citations、Source Registry 和 Internal provenance
+- Live API 冷启动提示、120 秒超时与一键 Sample fallback
 
-当缺少独立高质量新闻来源、SEC 正文不完整或数据存在错误时，评分工具会扣分或限制最高分，避免仅依赖语言模型主观给出置信度。
+![Agent analysis view](docs/screenshots/agent-analysis.jpg)
 
-### 6. 最终报告生成
+![Evidence and citation drawer](docs/screenshots/evidence-citations.jpg)
 
-策略 Agent 在完成三项专业分析和置信度评分后，生成统一的结构化报告。FastAPI 将报告返回前端，由网页按照纵向模块展示。
+## Known limitations
 
-## 数据来源
+- 部分新闻源只能取得标题、摘要或截断正文；系统必须限制陈述范围。
+- SEC Company Facts 的结构化事实可能晚于最新 filing。
+- 外国发行人的最新 IFRS 结构化事实可能缺失，无法可靠提取时保持 partial。
+- Phase 7B 仍在完善多事实句的逐前提引用，以及正文与 internal provenance 的连接。
+- 这是研究辅助与工程作品集项目，**不是自动交易系统，也不构成投资建议**。
 
-- Yahoo Finance via `yfinance`
-- SEC Company Facts API
-- SEC EDGAR Submissions and Filing Documents
-- Alpaca News API
-- Benzinga news distributed through Alpaca
+## Quick start
 
-不同数据源可能存在更新时间差异。系统会在报告中说明数据日期、读取限制和可能的延迟。
+### 1. Local setup
 
-## 技术栈
+```bash
+git clone https://github.com/christinezhao030816/us-stock-agent.git
+cd us-stock-agent
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
 
-- Python
-- FastAPI
-- OpenAI Agents SDK
-- Pydantic
-- HTTPX
-- yfinance
-- HTML、CSS 和 JavaScript
+配置 `.env`（不要提交）：
 
-## 项目结构
+```dotenv
+OPENAI_API_KEY=...
+ALPACA_API_KEY=...
+ALPACA_SECRET_KEY=...
+SEC_USER_AGENT=YourName your_email@example.com
+```
+
+### 2. Run
+
+```bash
+uvicorn app:app --host 127.0.0.1 --port 8000
+```
+
+打开 `http://127.0.0.1:8000`。若只需无网络演示，可直接打开 `parallax_prototype.html` 并保持 Sample Mode。
+
+### 3. Test
+
+```bash
+python -m pip install pytest
+PYTHONPATH=. python -m pytest -q
+python -m compileall -q app.py agents tools evaluation tests
+git diff --check
+```
+
+### 4. Docker
+
+```bash
+docker build -t parallax-stock-research .
+docker run --env-file .env -p 8000:8000 parallax-stock-research
+```
+
+## Repository map
 
 ```text
-us-stock-agent/
-├── agents/
-│   ├── strategist_agent.py
-│   ├── technical_agent.py
-│   ├── fundamental_agent.py
-│   └── news_agent.py
-├── tools/
-│   ├── technical_tool.py
-│   ├── fundamental_tool.py
-│   ├── news_tool.py
-│   ├── filing_tool.py
-│   ├── filing_text_tool.py
-│   └── confidence_tool.py
-├── static/
-│   └── index.html
-├── app.py
-├── requirements.txt
-├── .env.example
-└── README.md
+agents/       specialist and strategy Agent definitions
+tools/        market, SEC, news, evidence, freshness and scoring tools
+evaluation/   frozen rubrics, independent evaluators and regression runners
+tests/        deterministic regression tests
+app.py        FastAPI orchestration and /analyze response
+parallax_prototype.html  single-file interview Dashboard
+```
+
+---
+
+Built as an evidence-first AI research system: failures remain visible, partial data stays partial, and every metric is tied to a frozen evaluation definition.
