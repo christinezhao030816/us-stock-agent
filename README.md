@@ -65,30 +65,31 @@ Sample Mode is clearly labeled and never presents its packaged demonstration dat
 ## Multi-agent architecture
 
 ```mermaid
-flowchart TD
-    U["User enters a stock ticker"] --> API["FastAPI /analyze"]
-    API --> S["Strategy Agent"]
+flowchart LR
+    U[User / Dashboard] --> API[FastAPI POST /analyze]
+    API --> S[Strategy Agent orchestrator]
 
-    S -->|parallel call| T["Technical Agent"]
-    S -->|parallel call| F["Fundamental Agent"]
-    S -->|parallel call| N["News Agent"]
+    S --> T[Technical Agent]
+    S --> F[Fundamental Agent]
+    S --> N[News Agent]
 
-    T --> Y["Yahoo Finance / yfinance"]
-    F --> CF["SEC Company Facts"]
-    F --> ED["SEC EDGAR filings and exhibits"]
-    N --> AN["Alpaca News / Benzinga"]
+    T --> Y[Yahoo Finance / yfinance]
+    F --> CF[SEC Company Facts]
+    F --> ED[SEC EDGAR submissions and filings]
+    N --> AN[Alpaca News / Benzinga content]
     N --> ED
 
-    T --> M["Specialist analysis results"]
-    F --> M
-    N --> M
+    T --> TS[Strategy synthesis]
+    F --> TS
+    N --> TS
 
-    M --> C["Confidence scoring tool"]
-    C --> R["Strategy Agent generates the consolidated report"]
-    R --> UI["Modular web presentation"]
+    TS --> ER[Claim registry and source registry]
+    TS --> IP[Internal provenance]
+    ER --> R[Final dashboard response]
+    IP --> R
 ```
 
-The Strategy Agent invokes the three specialist Agents as parallel tools. The specialists do not communicate directly with one another; their structured outputs return to Strategy for comparison and synthesis. The consolidated specialist results pass through the confidence-scoring step before Strategy generates the final modular report.
+The Strategy Agent invokes the three specialist Agents as parallel tools. The specialists do not communicate directly with one another; their structured outputs return to Strategy for comparison and synthesis.
 
 ## Agent responsibilities
 
