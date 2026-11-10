@@ -6,6 +6,14 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from tools.ticker_symbols import (
+    alpaca_symbol,
+    canonicalize_symbol,
+    symbol_aliases,
+    ticker_mapping,
+)
+from tools.news_evidence import classify_article_evidence
+
 
 load_dotenv()
 
@@ -152,7 +160,7 @@ def _relevance_score(
     source_score: int,
 ) -> int:
     normalized_symbols = {
-        str(item).upper()
+        canonicalize_symbol(str(item))
         for item in article_symbols
     }
 
@@ -161,8 +169,12 @@ def _relevance_score(
     if symbol in normalized_symbols:
         score += 60
 
+    aliases = "|".join(
+        re.escape(alias)
+        for alias in symbol_aliases(symbol)
+    )
     symbol_pattern = re.compile(
-        rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])",
+        rf"(?<![A-Z0-9])(?:{aliases})(?![A-Z0-9])",
         re.IGNORECASE,
     )
 
@@ -186,7 +198,9 @@ def get_stock_news(
 ) -> dict[str, Any]:
     """获取并筛选指定股票最近7天的相关新闻。"""
 
-    symbol = symbol.upper().strip()
+    symbol = canonicalize_symbol(symbol)
+    symbols = ticker_mapping(symbol)
+    source_symbol = alpaca_symbol(symbol)
     limit = max(1, min(limit, 10))
 
     now = datetime.now(timezone.utc)
@@ -195,7 +209,7 @@ def get_stock_news(
     fetch_limit = min(max(limit * 6, 30), 50)
 
     params = {
-        "symbols": symbol,
+        "symbols": source_symbol,
         "start": start_time.isoformat(),
         "end": now.isoformat(),
         "sort": "desc",
@@ -224,9 +238,13 @@ def get_stock_news(
         source = str(item.get("source") or "未知来源").strip()
 
 
-        article_symbols = [
+        source_article_symbols = [
             str(value).upper()
             for value in item.get("symbols", [])
+        ]
+        article_symbols = [
+            canonicalize_symbol(value)
+            for value in source_article_symbols
         ]
 
         if symbol not in article_symbols:
@@ -235,8 +253,12 @@ def get_stock_news(
 
         unique_symbols = set(article_symbols)
 
+        aliases = "|".join(
+            re.escape(alias)
+            for alias in symbol_aliases(symbol)
+        )
         symbol_pattern = re.compile(
-            rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])",
+            rf"(?<![A-Z0-9])(?:{aliases})(?![A-Z0-9])",
             re.IGNORECASE,
         )
 
@@ -275,10 +297,10 @@ def get_stock_news(
             source_score=quality["score"],
         )
 
-        accepted_articles.append(
-            {
+        accepted_article = {
                 "headline": headline,
                 "summary": summary or None,
+                "article_body": None,
                 "source": source,
                 "source_quality": quality["label"],
                 "source_quality_level": quality["level"],
@@ -287,12 +309,19 @@ def get_stock_news(
                 "updated_at": item.get("updated_at"),
                 "url": url,
                 "symbols": article_symbols,
+                "source_symbols": source_article_symbols,
                 "relevance_score": relevance_score,
                 "relevance_reason": (
                     f"Alpaca 将该新闻明确关联至 {symbol}"
                 ),
             }
+        accepted_article.update(
+            classify_article_evidence(
+                accepted_article,
+                company_match=symbol in article_symbols,
+            )
         )
+        accepted_articles.append(accepted_article)
 
     accepted_articles.sort(
         key=lambda article: (
@@ -316,6 +345,8 @@ def get_stock_news(
 
     return {
         "symbol": symbol,
+        "source_symbol": source_symbol,
+        "symbol_mapping": symbols,
         "analysis_time_utc": now.isoformat(),
         "news_period_start_utc": start_time.isoformat(),
         "news_period_end_utc": now.isoformat(),

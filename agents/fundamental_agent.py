@@ -8,7 +8,7 @@ from agents import Agent, Runner, function_tool
 from tools.filing_text_tool import (
     get_recent_sec_filing_texts,
 )
-from tools.fundamental_tool import (
+from tools.fundamental_agent_tool import (
     get_fundamental_metrics,
 )
 
@@ -39,7 +39,8 @@ get_recent_sec_filing_texts 工具：
 
 - 未找到可用的SEC营业收入记录
 - 没有匹配到10-Q或10-K
-- 公司使用6-K、20-F或40-F申报
+- 外国发行人的结构化IFRS核心事实缺失，或最新20-F/6-K
+  没有进入Company Facts
 - 结构化收入、利润或现金流数据缺失
 - get_fundamental_metrics工具返回错误
 
@@ -64,6 +65,39 @@ get_recent_sec_filing_texts 工具：
 - 现金、债务、资产和股东权益
 - 股东权益占资产比例
 
+工具返回的fundamental_freshness是所有基本面事实的新鲜度唯一依据。
+必须逐项显示财务期间、提交日期、period_age_days、filing_age_days、
+freshness_status和freshness_reason。只有fresh事实可以称为“最近一期”
+或“最新财务数据”。caution、stale或unknown必须醒目标注；任何核心
+事实不是fresh时，基本面结论必须降级。current_analysis_usable=false时，
+不得形成正常的当前基本面结论，也不得把历史数据用于当前看多判断。
+必须同时核对age_freshness_status和latest_period_alignment_status。
+如果后者为historical_fallback，即使年龄状态为fresh，也只能把数值
+描述为历史回退；必须列出selected_period_end、latest_filing_period_end
+和period_lag_days，不得称为最新数据，也不得用于当前基本面结论。
+
+工具返回的 financial_amounts 是金额的唯一展示来源。
+每个金额对象都包含 value、currency、scale、period、
+statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
+不得自行翻译、换算、缩放或替换单位。
+
+例如：
+
+- value=9.18、scale=billion、display_zh=9,180,000,000 美元时，
+  只能写“9,180,000,000 美元”。
+- 不得在最终报告中写“十亿美元”“百万美元”、billion或million。
+- 负数必须保留工具提供的会计括号格式；EPS使用“美元/股”等原币
+  每股单位。百分比、倍数和RSI不是金额，不得套用金额格式。
+
+名称以 _billion_usd 结尾的旧数值字段只用于比率和交叉检查，
+不得直接用于自然语言金额展示。
+
+如果taxonomy=ifrs-full，必须同时显示taxonomy、concept、原始币种、
+期间、form和accession。TWD、JPY等金额只能按financial_amounts中的
+原币display_zh展示；不得自行换算为USD。annual、quarterly、
+half_year_ytd和nine_month_ytd不得混用。latest_6k_structured_core_present
+为false时必须说明最新6-K没有可靠结构化核心指标，不得从新闻摘要猜测。
+
 必须区分：
 
 - 单季度损益数据
@@ -71,6 +105,8 @@ get_recent_sec_filing_texts 工具：
 - 期末资产负债表数据
 
 不得把累计现金流与单季度净利润直接比较。
+不得把YTD现金流描述成单季度现金流；只有收入和净利润的起止日期、
+表单及期间口径一致时才可计算或解释利润率。
 
 二、外国私人发行人备用规则
 
@@ -161,6 +197,7 @@ get_recent_sec_filing_texts 工具：
 12. 数据完整性与正文截断情况
 13. SEC原文链接
 14. 数据限制
+15. 财务数据新鲜度与过期警告
 
 必须说明分析不构成投资建议。
 """,

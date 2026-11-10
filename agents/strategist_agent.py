@@ -14,6 +14,11 @@ from news_agent import news_agent
 from tools.confidence_tool import (
     calculate_confidence_score,
 )
+from tools.agent_status import (
+    extract_fundamental_agent_output,
+    extract_news_agent_output,
+    extract_technical_agent_output,
+)
 
 
 load_dotenv()
@@ -39,8 +44,66 @@ strategist_agent = Agent(
 三个专业分析完成后，必须调用
 calculate_confidence_score 工具计算综合置信度。
 
+三个专业分析工具返回JSON对象，其中：
+
+- report 是专业分析正文
+- agent_status 是根据底层工具真实数据计算的结构化状态
+- technical_analysis还会返回technical_evidence元数据和证据路径
+- citations 是由底层工具确定性生成的逐项事实引用
+- fundamental_freshness是基本面事实的新鲜度和期间结构
+
+必须使用 report 完成综合分析，并如实采用 agent_status。
+如果任一专业模块为 partial 或 failed，必须在最终报告的数据限制
+中明确说明，且不得把缺失数据描述为完整成功。
+不得把technical_evidence中的大量日线行情复制到最终报告；
+可以在技术面数据来源中保留证据文件路径和计算口径摘要。
+
 不得跳过任何专业分析工具，也不得跳过置信度计算工具。
 不得自行编造、修改或补充专业分析师提供的数据。
+只能使用三个专业分析工具传入的引用编号和URL。不得自行创造、
+猜测或改写URL、SEC filing编号、新闻标题或引用编号。看多、看空、
+风险、催化剂和综合结论中的重要事实，必须紧跟相应的[Tn]、[Fn]
+或[Nn]引用；纯分析判断引用其基础事实即可。partial或unsupported
+引用不得描述为完整支持。
+引用编号只允许使用工具实际提供且已注册的[Tn]、[Fn]、[Nn]。
+禁止输出[S1]、[S2]或任何其他前缀，也不得猜测不存在的编号。
+Strategy复述、改写或总结Technical、Fundamental、News提供的事实时，
+必须在每一次正文出现处原样继承支持该事实的[Tn]、[Fn]或[Nn]编号。
+不得生成三个专业Agent未提供的具体数字、日期、公司行为或事件。
+看多、看空、风险、催化剂和综合判断应明确写成分析观点；若观点句包含
+可验证的事实前提，该前提必须紧跟其原始引用编号。
+置信度分数、freshness、latest-period alignment、historical fallback和
+Agent状态属于“系统评分/系统诊断”，不得使用外部T/F/N引用假装支持。
+数据缺失、截断、访问受限或模块不可用等限制，只能逐字依据工具返回的
+missing_items、errors、freshness、alignment或agent_status，不得自由推测。
+必须原样继承新闻citation中的evidence_depth、claim_scope_limited和
+limitation_disclosed。headline_only只能复述标题明确表达的内容，并标注
+“标题级信息，未读取完整正文”；不得扩写原因、背景、影响或管理层含义。
+truncated_source只能复述实际取得的片段，并标注“附件内容不完整”；
+不得补全截断内容。unavailable只能放在“待核实信息”或“数据限制”，
+不得用于看多、看空、风险、催化剂或综合结论。
+新闻citation中的strategy_eligible=false时，无论evidence_depth名称如何，
+该新闻都只能进入消息面摘要、待核实信息或数据限制，不得用于看多、
+看空、风险、催化剂、估值或综合结论。不得删除整个消息面模块；应保留
+实际取得的标题、摘要或片段，并原样披露strategy_limitation_reason。
+必须原样继承fundamental_freshness限制。caution、stale或unknown事实
+不得改写成fresh，不得称为“最近一期”或“最新财务数据”；
+current_analysis_usable=false时，不得用这些历史事实支持当前看多、
+看空或正常基本面结论，必须醒目标注过期警告。
+latest_period_alignment_status为historical_fallback时，必须明确列出
+系统选中期间、SEC最新申报期间和period_lag_days；即使
+age_freshness_status为fresh，也不得把历史回退数据称为最新、最近一期，
+不得让其增加基本面质量分或支持当前投资结论。
+
+基本面报告中的金额已经由工具规范化。综合报告必须逐字保留
+基本面分析师给出的完整会计数字和原币单位，不得改写为
+“十亿美元”“百万美元”、billion、million或其他缩写金额，
+也不得自行换算或缩放金额。负数保留会计括号格式，EPS保留
+“原币/股”格式。
+对于IFRS外国发行人，必须保留TWD、JPY等原始报告币种以及
+taxonomy、concept、期间和accession；不得把原币金额换算成USD，
+不得混用annual、quarterly或FYTD数据。最新20-F/6-K未进入
+Company Facts时，必须保留historical_fallback/unknown限制。
 
 一、数据日期规则
 
@@ -121,6 +184,12 @@ calculate_confidence_score 工具计算综合置信度。
 
 必须如实填写这些输入，不得为了提高置信度而改变判断。
 
+13. fundamental_freshness_status
+   必须使用fundamental_freshness.summary中的同名状态。
+
+14. fundamental_period_age_days
+   使用核心财务事实中最大的有效period_age_days；未知时留空。
+
 三、置信度输出规则
 
 必须完整采用置信度工具返回的：
@@ -149,7 +218,9 @@ calculate_confidence_score 工具计算综合置信度。
 
 五、输出结构
 
-必须使用中文，并按照以下结构输出：
+必须使用调用请求明确指定的语言输出；未指定时使用中文。
+无论使用何种语言，都必须按照以下结构输出，并保持所有数字、
+日期、币种、链接和专有名词不变：
 
 1. 股票代码与数据日期
    - 综合分析日期
@@ -197,6 +268,10 @@ calculate_confidence_score 工具计算综合置信度。
 13. 数据限制
 
 14. 明确说明本分析不构成投资建议
+
+15. 来源与证据
+    使用专业工具传入的引用编号，列出来源名称、日期和完整URL。
+    不得列出未在正文中使用的来源。
 """,
     tools=[
         technical_agent.as_tool(
@@ -205,6 +280,9 @@ calculate_confidence_score 工具计算综合置信度。
                 "分析指定美股的价格、均线、动量、"
                 "成交量、支撑位与阻力位。"
             ),
+            custom_output_extractor=(
+                extract_technical_agent_output
+            ),
         ),
         fundamental_agent.as_tool(
             tool_name="fundamental_analysis",
@@ -212,12 +290,16 @@ calculate_confidence_score 工具计算综合置信度。
                 "分析指定美股最近一期SEC财报的"
                 "盈利、增长、现金流和资本结构。"
             ),
+            custom_output_extractor=(
+                extract_fundamental_agent_output
+            ),
         ),
         news_agent.as_tool(
             tool_name="news_analysis",
             tool_description=(
                 "分析指定美股近期新闻和SEC重大事项申报。"
             ),
+            custom_output_extractor=extract_news_agent_output,
         ),
         confidence_score_tool,
     ],

@@ -1,0 +1,258 @@
+{
+  "rubric_version": "3.0",
+  "frozen_at": "2026-09-20",
+  "scope": "Phase 6A final evaluation preflight",
+  "principles": {
+    "claim_source": "Build the claim universe prospectively from every factual assertion in the report body, including unregistered and uncited assertions. Use the structured registry only to match and verify body claims; never use it to define the denominator. The generated Sources and Evidence appendix is excluded.",
+    "ground_truth_independence": "Technical ground truth is recomputed only from saved raw bars. Fundamental ground truth is read from saved SEC Company Facts and Submissions snapshots without importing production selectors. News ground truth is checked against saved structured provider and filing snapshots. Completeness is parsed independently from the final report.",
+    "missing_is_not_false": "Unavailable evidence is not automatically incorrect. It is labeled unsupported, unverifiable, or not_claimed according to the definitions below.",
+    "no_hidden_failures": "Every incorrect, unsupported, unverifiable, and not_claimed item must remain in fact_evaluation.csv and the run summary.",
+    "evidence_boundary": "Every extracted body item is classified exactly once as external_fact, system_derived, analytical_judgment, operational_disclosure, not_claimed_marker, or legitimately_excluded_non_claim. External claims use T/F/N evidence; internal and operational claims use deterministic internal provenance.",
+    "evaluation_grain": "Factual, unsupported and numerical metrics use unique atomic external claims. Citation Coverage uses body claim occurrences. Internal system claims and analytical judgments are reported separately."
+  },
+  "labels": {
+    "unsupported": "A factual claim is present, but no available source record supports the claimed content, or the cited source exists but does not support it.",
+    "unverifiable": "A factual claim is present, but independent verification cannot be completed because the authoritative evidence is unavailable, unreadable, paywalled, or returns an access failure such as HTTP 403.",
+    "not_claimed": "An expected fact was not asserted, or the report explicitly says the value is unavailable without asserting a value. It is excluded from factual and unsupported-claim denominators and is reflected in completeness.",
+    "not_cited": "A factual claim exists in the structured registry but has no citation marker in the report body. It reduces Citation Coverage but is not a failed citation attempt in Citation Accuracy.",
+    "not_applicable": "The check does not apply to the claim type, such as numerical accuracy for a filing-date claim."
+  },
+  "metrics": {
+    "factual_accuracy": {
+      "evaluation_unit": "One independently verifiable factual claim.",
+      "numerator": "Count of claims labeled correct.",
+      "denominator": "correct + incorrect.",
+      "formula": "correct / (correct + incorrect)",
+      "ground_truth": "Independent technical recomputation, raw SEC/XBRL records and filing metadata, or saved structured news/filing responses.",
+      "pass_fail_rule": "A claim is correct only when its value or factual content, entity, period/date, unit/currency, and source context agree with independent ground truth. Unsupported and unverifiable claims are excluded from the denominator but reported separately.",
+      "rounding_tolerance": "Use the category-specific tolerances in rounding_tolerances. Exact strings and dates require exact normalized equality.",
+      "na_rule": "If correct + incorrect is zero, the percentage is null, not 0% or 100%.",
+      "special_handling": {
+        "unsupported": "Exclude from denominator and include in unsupported counts.",
+        "unverifiable": "Exclude from denominator and report separately.",
+        "not_claimed": "Exclude from denominator and report separately as a completeness gap."
+      },
+      "example": "A revenue claim of 12.96 JPY trillion is correct only when the raw SEC fact has the matching IFRS concept, JPY unit, accession, and annual period; a numerically equal USD claim is incorrect."
+    },
+    "unsupported_claim_rate": {
+      "evaluation_unit": "One factual claim actually asserted in the report body.",
+      "numerator": "Count of asserted factual claims labeled unsupported.",
+      "denominator": "All asserted factual claims, including correct, incorrect, unsupported, and unverifiable claims; exclude not_claimed rows.",
+      "formula": "unsupported claims / total factual claims",
+      "ground_truth": "The independently saved evidence and the claim-to-source relationship.",
+      "pass_fail_rule": "A source URL alone is insufficient. The source record must support the actual value or event. A missing claim is not unsupported.",
+      "rounding_tolerance": "Not applicable; this is a categorical classification.",
+      "na_rule": "If no factual claim is asserted, the percentage is null.",
+      "special_handling": {
+        "unsupported": "Count in numerator and denominator.",
+        "unverifiable": "Count only in denominator; do not automatically mark incorrect or unsupported.",
+        "not_claimed": "Exclude from numerator and denominator and assess under completeness."
+      },
+      "example": "An article URL that resolves but does not contain the claimed event is unsupported. A paywalled article whose metadata matches but whose content cannot be checked is unverifiable."
+    },
+    "numerical_accuracy": {
+      "evaluation_unit": "One numerical claim that can be independently recomputed or reconciled to authoritative evidence.",
+      "numerator": "Count of independently evaluable numerical claims labeled numerically correct.",
+      "denominator": "numerically correct + numerically incorrect.",
+      "formula": "numerically correct / independently evaluable numerical claims",
+      "ground_truth": "Independent raw-bar calculations or raw SEC/XBRL values and deterministic arithmetic.",
+      "pass_fail_rule": "Value, unit, currency, period, and calculation basis must all agree. A value within tolerance but in the wrong currency or period is incorrect.",
+      "rounding_tolerance": "Technical prices, averages, returns, RSI, ratios, support and resistance: absolute error <= 0.01; volume counts: exact integer; financial display amounts and EPS: <= 0.01 in the stated unit; financial ratios: <= 0.0001; dates and period labels: exact.",
+      "na_rule": "If no numerical claim is independently evaluable, the percentage is null.",
+      "special_handling": {
+        "unsupported": "Exclude from the main denominator and report as unsupported_numerical_claims.",
+        "unverifiable": "Exclude from the main denominator and report separately.",
+        "not_claimed": "Exclude from the denominator and report separately."
+      },
+      "example": "TWD 2,894.31 billion cannot be accepted as USD 2,894.31 billion, and an FYTD cash-flow fact cannot validate a single-quarter claim."
+    },
+    "citation_accuracy": {
+      "evaluation_unit": "One citation attempt attached to a factual claim in the report body.",
+      "numerator": "Citations that resolve to a unique registered source and whose evidence supports the associated claim.",
+      "denominator": "citation_correct + citation_incorrect; citations blocked from independent inspection are reported as unverifiable and excluded.",
+      "formula": "citation correct / evaluated citations",
+      "ground_truth": "Independent evidence snapshots plus the claim ID, source registry, source anchor, URL, accession/date, and report-body marker.",
+      "pass_fail_rule": "The claim ID must be unique, used in the report body, registered, point to the expected evidence, and be supported by that evidence. URL existence alone does not pass.",
+      "rounding_tolerance": "Not applicable.",
+      "na_rule": "If there are no independently evaluated citation attempts, the percentage is null.",
+      "special_handling": {
+        "unsupported": "A citation to a source that does not support the claim is incorrect.",
+        "unverifiable": "Exclude from the accuracy denominator and report separately.",
+        "not_claimed": "Not applicable.",
+        "not_cited": "Exclude from Citation Accuracy and count as uncovered in Citation Coverage."
+      },
+      "example": "A [F1] marker passes only if F1 is unique, appears before the Sources appendix, maps to a registered SEC URL, and the cited XBRL record supports the value and period."
+    },
+    "citation_coverage": {
+      "evaluation_unit": "One required factual claim.",
+      "numerator": "Required claims with a valid claim marker in the report body and a correct citation.",
+      "denominator": "All asserted factual claims requiring support.",
+      "formula": "validly cited required claims / required claims",
+      "ground_truth": "The complete body-first claim inventory, matched structured registry records, and report-body markers; appendix-only markers do not count.",
+      "pass_fail_rule": "Only citation_accuracy=correct counts as covered.",
+      "rounding_tolerance": "Not applicable.",
+      "na_rule": "If no factual claims require citations, the percentage is null.",
+      "special_handling": {
+        "unsupported": "Remains in denominator if a factual assertion was made.",
+        "unverifiable": "Remains in denominator unless no claim was made.",
+        "not_claimed": "Excluded and assessed under completeness."
+      },
+      "example": "A claim listed only in the generated evidence appendix is not considered cited in the narrative."
+    },
+    "internal_traceability_coverage": {
+      "evaluation_unit": "One system-derived or operational claim in the report body.",
+      "numerator": "Claims with input fields, formula or rule, result, calculation timestamp, provenance path, and deterministic=true.",
+      "denominator": "All system-derived and operational claims, including explicit not-claimed markers.",
+      "formula": "traceable internal claims / internal system claims",
+      "pass_fail_rule": "Must equal 100%; external T/F/N citations cannot substitute for internal provenance."
+    },
+    "opinion_premise_citation_coverage": {
+      "evaluation_unit": "One analytical judgment whose sentence includes a factual premise.",
+      "numerator": "Judgments whose factual premises retain valid T/F/N claim IDs.",
+      "denominator": "All analytical judgments that rely on factual premises.",
+      "formula": "judgments with cited premises / judgments requiring premises",
+      "pass_fail_rule": "A pure opinion needs no citation, but a numerical, dated, event, or company-action premise can never be relabelled as opinion."
+    },
+    "completeness": {
+      "evaluation_unit": "One report-level checklist module.",
+      "numerator": "Completed modules.",
+      "denominator": "8 fixed modules.",
+      "formula": "completed modules / 8",
+      "ground_truth": "Independent parsing of the final report body.",
+      "pass_fail_rule": "A module needs substantive content. An explicit unavailable-data disclosure counts only when it states the missing data, why it is missing, the analytical impact, and the degraded status. Empty headings and boilerplate do not pass.",
+      "rounding_tolerance": "Not applicable.",
+      "na_rule": "No module is N/A; an unavailable-data module can pass through complete disclosure.",
+      "special_handling": {
+        "unsupported": "Does not automatically fail if the limitation is completely disclosed.",
+        "unverifiable": "Does not automatically fail if the limitation and impact are completely disclosed.",
+        "not_claimed": "Fails the affected module unless complete missing-data disclosure is present."
+      },
+      "modules": [
+        "technical",
+        "fundamental",
+        "news_events",
+        "risks",
+        "catalysts",
+        "bull_case",
+        "bear_case",
+        "final_synthesis"
+      ],
+      "example": "A news section with no articles can still pass if it clearly states the source returned no usable news, explains the impact on confidence, and marks the news agent partial; an empty 'News' heading fails."
+    }
+  },
+  "rounding_tolerances": {
+    "technical_price_usd": 0.01,
+    "technical_percent": 0.01,
+    "technical_rsi": 0.01,
+    "technical_ratio": 0.01,
+    "technical_volume_shares": 0,
+    "financial_display_amount": 0.01,
+    "financial_eps": 0.01,
+    "financial_percent": 0.01,
+    "financial_ratio": 0.0001
+  },
+  "required_claim_catalog": {
+    "technical": [
+      "current_price",
+      "return_20d",
+      "sma20",
+      "sma50",
+      "sma200",
+      "rsi14",
+      "latest_volume",
+      "average_volume_20d",
+      "support_20d",
+      "resistance_20d"
+    ],
+    "fundamental": [
+      "revenue",
+      "net_income",
+      "EPS",
+      "operating_cash_flow",
+      "capital_expenditure",
+      "total_assets",
+      "total_liabilities",
+      "cash",
+      "total_debt"
+    ],
+    "news_events": [
+      "event_or_filing"
+    ]
+  },
+  "output_contract": {
+    "fact_level_file": "fact_evaluation.csv",
+    "claim_inventory_file": "claim_inventory.csv",
+    "report_level_file": "report_evaluation.csv",
+    "summary_file": "evaluation_summary.json",
+    "fact_required_fields": [
+      "ticker",
+      "claim_id",
+      "category",
+      "claim_type",
+      "agent_claim",
+      "ground_truth",
+      "accuracy_label",
+      "support_label",
+      "numerical_label",
+      "citation_label",
+      "evidence_source",
+      "evidence_url",
+      "notes"
+    ],
+    "report_required_fields": [
+      "ticker",
+      "technical",
+      "fundamental",
+      "news_events",
+      "risks",
+      "catalysts",
+      "bull_case",
+      "bear_case",
+      "final_synthesis",
+      "completeness_score",
+      "confidence_score",
+      "technical_agent_status",
+      "fundamental_agent_status",
+      "news_agent_status",
+      "strategy_agent_status",
+      "freshness",
+      "citation_coverage_pct",
+      "citation_integrity",
+      "total_body_factual_claims",
+      "registry_matched_claims",
+      "unmatched_body_claims",
+      "claim_inventory_coverage_pct",
+      "cited_body_claims",
+      "uncited_body_claims",
+      "invalid_citation_claims",
+      "registry_unused_claims"
+      ,"unique_external_claims"
+      ,"external_claim_occurrences"
+      ,"internal_traceability_coverage_pct"
+      ,"opinion_premise_citation_coverage_pct"
+      ,"reconciliation_closed"
+    ],
+    "claim_inventory_required_fields": [
+      "ticker",
+      "section",
+      "sentence_text",
+      "atomic_claim",
+      "claim_type",
+      "contains_number",
+      "contains_date",
+      "contains_event",
+      "contains_company_action",
+      "registry_claim_id",
+      "citation_in_body",
+      "citation_valid",
+      "ground_truth_available",
+      "evaluation_status",
+      "extraction_method",
+      "notes"
+      ,"item_category"
+      ,"unique_claim_key"
+      ,"internal_provenance_id"
+      ,"internal_traceability_status"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+ticker,sector,portfolio_weight_pct,asset_class,in_scope
+AAPL,Information Technology,1.61,Equity,True
+ABBV,Healthcare,0.64,Equity,True
+BRK.B,Financials,1.19,Equity,True
+CAT,Industrials,0.83,Equity,True
+COST,Consumer Staples,0.99,Equity,True
+DUK,Utilities,0.79,Equity,True
+EQIX,Real Estate,0.99,Equity,True
+GOOGL,Communication Services,0.4,Equity,True
+JNJ,Healthcare,0.95,Equity,True
+JPM,Financials,1.31,Equity,True
+LIN,Materials,0.5,Equity,True
+MSFT,Information Technology,1.97,Equity,True
+NVDA,Information Technology,0.89,Equity,True
+SONY,Consumer Discretionary,1.1,Equity,True
+TM,Consumer Discretionary,1.1,Equity,True
+TSLA,Consumer Discretionary,0.83,Equity,True
+TSM,Information Technology,2.76,Equity,True
+WELL,Real Estate,0.99,Equity,True
+XOM,Energy,1.1,Equity,True
