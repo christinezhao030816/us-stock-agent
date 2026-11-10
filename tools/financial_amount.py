@@ -122,6 +122,34 @@ def format_financial_per_share_zh(
     return f"({amount})" if decimal_value < 0 else amount
 
 
+def format_financial_amount_en(
+    value: int | float | str | Decimal,
+    currency: str,
+    scale: str,
+    target_scale: str | None = None,
+) -> str:
+    """Render a full accounting amount with an explicit ISO currency."""
+
+    source_scale = _validate_scale(scale)
+    display_scale = _validate_scale(target_scale or "unit")
+    converted = convert_amount_scale(value, source_scale, display_scale)
+    currency_code = currency.strip().upper()
+    amount = f"{_format_decimal(abs(converted))} {currency_code}"
+    return f"({amount})" if converted < 0 else amount
+
+
+def format_financial_per_share_en(
+    value: int | float | str | Decimal,
+    currency: str,
+) -> str:
+    """Render a per-share amount with an explicit ISO currency."""
+
+    decimal_value = _as_decimal(value)
+    currency_code = currency.strip().upper()
+    amount = f"{_format_decimal(abs(decimal_value))} {currency_code}/share"
+    return f"({amount})" if decimal_value < 0 else amount
+
+
 _ABBREVIATED_AMOUNT = re.compile(
     r"(?P<open>\()?\s*(?P<value>-?[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
     r"(?P<scale>十亿|百万|亿|billion|million)\s*"
@@ -148,7 +176,11 @@ _EPS_AMOUNT = re.compile(
 )
 
 
-def normalize_financial_amount_display(text: str) -> str:
+def normalize_financial_amount_display(
+    text: str,
+    *,
+    language: str = "zh",
+) -> str:
     """把报告中的缩写财务金额规范为完整原币会计数字。"""
 
     scale_factors = {
@@ -176,7 +208,12 @@ def normalize_financial_amount_display(text: str) -> str:
         if match.group("open") and match.group("close"):
             value = -abs(value)
         factor = scale_factors[match.group("scale").lower()]
-        return format_financial_amount_zh(
+        formatter = (
+            format_financial_amount_en
+            if language == "en"
+            else format_financial_amount_zh
+        )
+        return formatter(
             value * factor,
             currency_codes[match.group("currency").lower()],
             "unit",
@@ -187,12 +224,28 @@ def normalize_financial_amount_display(text: str) -> str:
     normalized = _ABBREVIATED_AMOUNT_PREFIX_CURRENCY.sub(replace, normalized)
 
     def replace_eps(match: re.Match[str]) -> str:
-        currency = CURRENCY_LABELS_ZH.get(
-            match.group("currency").upper(), match.group("currency")
+        currency_code = currency_codes.get(
+            match.group("currency").lower(),
+            match.group("currency").upper(),
         )
+        if language == "en":
+            return (
+                f"{match.group('prefix')}{match.group('value')} "
+                f"{currency_code}/share"
+            )
+        currency = CURRENCY_LABELS_ZH.get(currency_code, currency_code)
         return f"{match.group('prefix')}{match.group('value')} {currency}/股"
 
     normalized = _EPS_AMOUNT.sub(replace_eps, normalized)
+    if language == "en":
+        normalized = (
+            normalized.replace("美元/股", "USD/share")
+            .replace("新台币/股", "TWD/share")
+            .replace("日元/股", "JPY/share")
+            .replace("美元", "USD")
+            .replace("新台币", "TWD")
+            .replace("日元", "JPY")
+        )
 
     # URL slugs are not report amounts. Percent-encode one letter so their
     # target is unchanged while an amount-abbreviation scan cannot mistake the

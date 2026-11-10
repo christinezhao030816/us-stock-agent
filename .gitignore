@@ -48,6 +48,7 @@ evaluation/*_regression/
 evaluation/phase7a_p0_regression/
 evaluation/confidence_calibration/
 evaluation/technical_evidence/
+evaluation/interview_live_debug/
 evaluation/*_results.csv
 evaluation/deep_evaluation_template.csv
 evaluation/**/test_results.txt

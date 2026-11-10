@@ -42,6 +42,26 @@ PHASE7A_HEADLINE_FIXTURES = (
 
 
 class NewsEvidenceBoundaryTests(unittest.TestCase):
+    def test_english_boundary_rendering_does_not_insert_chinese_labels(self) -> None:
+        claims = build_news_citations(
+            {
+                "get_stock_news": [
+                    {
+                        "symbol": "TEST",
+                        "articles": [_article("Verified headline")],
+                    }
+                ]
+            }
+        )
+        repaired = enforce_news_evidence_boundaries(
+            "The report expanded beyond the headline. [N1]",
+            claims,
+            language="en",
+        )
+        self.assertIn("Headline-only evidence", repaired)
+        self.assertIn("Verified headline", repaired)
+        self.assertNotIn("标题级信息", repaired)
+
     def test_phase7a_headline_claims_remain_atomic_and_keep_title_values(self) -> None:
         for title in PHASE7A_HEADLINE_FIXTURES:
             with self.subTest(title=title):

@@ -208,7 +208,10 @@ async def analyze_stock(
             fundamental_freshness,
             language=request.language,
         )
-        report = normalize_financial_amount_display(report)
+        report = normalize_financial_amount_display(
+            report,
+            language=request.language,
+        )
         freshness_summary = (
             fundamental_freshness.get("summary", {})
             if isinstance(fundamental_freshness, dict)

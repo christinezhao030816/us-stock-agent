@@ -237,6 +237,40 @@ def _report_safe_news_text(value: Any) -> str:
     return re.sub(r"[;；]+\s*", "，", str(value or "")).strip()
 
 
+def _claim_text_for_language(
+    claim: dict[str, Any],
+    language: str,
+) -> str:
+    """Render evidence labels without changing the underlying claim value."""
+
+    text = str(claim.get("claim_text") or "")
+    if language != "en":
+        return text
+    if claim.get("agent") == "news":
+        content = claim.get("source_content") or {}
+        depth = str(claim.get("evidence_depth") or "fully_supported")
+        title = _report_safe_news_text(
+            content.get("title") or claim.get("source_anchor") or "News item"
+        )
+        if depth == "headline_only":
+            return f"Headline-only evidence: {title}"
+        if depth == "truncated_source":
+            form = str(content.get("form") or "SEC").strip()
+            accession = str(content.get("accession_number") or "").strip()
+            suffix = f" {accession}" if accession else ""
+            return f"Truncated source: SEC {form} filing{suffix}"
+        if depth == "unavailable":
+            return f"Full text unavailable: {title}"
+    return (
+        text.replace("美元/股", "USD/share")
+        .replace("新台币/股", "TWD/share")
+        .replace("日元/股", "JPY/share")
+        .replace("美元", "USD")
+        .replace("新台币", "TWD")
+        .replace("日元", "JPY")
+    )
+
+
 def _news_strategy_eligible(claim: dict[str, Any]) -> bool:
     explicit = claim.get("strategy_eligible")
     if isinstance(explicit, bool):
@@ -251,6 +285,7 @@ def _render_limited_news_claim(
     claim_id: str,
     claim: dict[str, Any],
     indentation: str = "",
+    language: str = "zh",
 ) -> str:
     depth = str(claim.get("evidence_depth") or "fully_supported")
     content = claim.get("source_content") or {}
@@ -258,6 +293,12 @@ def _render_limited_news_claim(
         title = _report_safe_news_text(
             content.get("title") or claim.get("claim_text")
         )
+        if language == "en":
+            return (
+                f"{indentation}- Unverified item (full text unavailable): "
+                f"{title}. This item is not treated as a confirmed news fact "
+                "or as support for the investment conclusion."
+            )
         return (
             f"{indentation}- 待核实信息（正文不可用）：{title}，"
             "该项不作为已确认新闻事实或投资结论依据。"
@@ -266,8 +307,13 @@ def _render_limited_news_claim(
         form = str(content.get("form") or "SEC").strip()
         accession = str(content.get("accession_number") or "").strip()
         identifier = f" {accession}" if accession else ""
+        prefix = (
+            "Truncated attachment; only the retrieved excerpt is confirmed:"
+            if language == "en"
+            else "附件内容不完整，仅确认已读取片段："
+        )
         return (
-            f"{indentation}- 附件内容不完整，仅确认已读取片段："
+            f"{indentation}- {prefix}{' ' if language == 'en' else ''}"
             f"SEC {form} filing{identifier} [{claim_id}]"
         )
     if depth == "headline_only":
@@ -277,13 +323,25 @@ def _render_limited_news_claim(
                 "标题级信息，未读取完整正文："
             )
         )
+        prefix = (
+            "Headline-only evidence; full article text was not retrieved:"
+            if language == "en"
+            else "标题级信息，未读取完整正文："
+        )
         return (
-            f"{indentation}- 标题级信息，未读取完整正文："
+            f"{indentation}- {prefix}{' ' if language == 'en' else ''}"
             f"{title} [{claim_id}]"
         )
     title = _report_safe_news_text(content.get("title"))
     summary = _report_safe_news_text(content.get("summary"))
     detail = f"：{summary}" if summary else ""
+    if language == "en":
+        detail = f": {summary}" if summary else ""
+        return (
+            f"{indentation}- Unverified summary (full article text was not "
+            f"retrieved): {title}{detail} [{claim_id}]. This item is disclosed "
+            "as a data limitation and is not used in the core conclusion."
+        )
     return (
         f"{indentation}- 待核实摘要（未读取完整正文）："
         f"{title}{detail} [{claim_id}]，该项仅作数据限制披露，"
@@ -294,6 +352,8 @@ def _render_limited_news_claim(
 def enforce_news_evidence_boundaries(
     report: str,
     citations: list[dict[str, Any]],
+    *,
+    language: str = "zh",
 ) -> str:
     """Render limited news evidence without allowing Strategy embellishment."""
 
@@ -346,19 +406,35 @@ def enforce_news_evidence_boundaries(
                     claim_id,
                     claim,
                     indentation,
+                    language,
                 )
             )
             represented.add(claim_id)
 
     missing = [claim_id for claim_id in limited if claim_id not in represented]
     if missing or gated_from_core:
-        output.extend(["", "### 标题级与待核实信息", ""])
+        heading = (
+            "### Headline-only and unverified items"
+            if language == "en"
+            else "### 标题级与待核实信息"
+        )
+        output.extend(["", heading, ""])
         for claim_id in missing:
             claim = limited[claim_id]
-            output.append(_render_limited_news_claim(claim_id, claim))
+            output.append(
+                _render_limited_news_claim(
+                    claim_id,
+                    claim,
+                    language=language,
+                )
+            )
         if gated_from_core:
             output.append(
-                "- 系统已将受限新闻从看多、看空、风险、催化剂及综合判断中移除，"
+                "- Limited news evidence was removed from bull, bear, risk, "
+                "catalyst, and overall-judgment sections; it is not used to "
+                "support the core investment conclusion."
+                if language == "en"
+                else "- 系统已将受限新闻从看多、看空、风险、催化剂及综合判断中移除，"
                 "这些信息不作为核心投资结论依据。"
             )
     return "\n".join(output)
@@ -1102,12 +1178,20 @@ def finalize_cited_report(
             ordinal = int(claim_id[1:])
             if 1 <= ordinal <= len(sec_filing_ids):
                 return f"[{sec_filing_ids[ordinal - 1]}]"
-        return "（未注册引用已移除）"
+        return (
+            "(unregistered citation removed)"
+            if language == "en"
+            else "（未注册引用已移除）"
+        )
 
     cleaned = _ANY_CLAIM_MARKER.sub(repair_marker, str(report or ""))
     cleaned = inherit_strategy_citations(cleaned, citations)
     cleaned = repair_cited_financial_values(cleaned, citations)
-    cleaned = enforce_news_evidence_boundaries(cleaned, citations)
+    cleaned = enforce_news_evidence_boundaries(
+        cleaned,
+        citations,
+        language=language,
+    )
     body_ids = set(_CLAIM_MARKER.findall(cleaned))
     body_citations = [
         claim
@@ -1120,7 +1204,15 @@ def finalize_cited_report(
         if claim.get("source_url")
     }
     cleaned = _URL_PATTERN.sub(
-        lambda match: match.group(0) if match.group(0).rstrip(".,") in allowed_urls else "[未验证URL已移除]",
+        lambda match: (
+            match.group(0)
+            if match.group(0).rstrip(".,") in allowed_urls
+            else (
+                "[unverified URL removed]"
+                if language == "en"
+                else "[未验证URL已移除]"
+            )
+        ),
         cleaned,
     ).rstrip()
 
@@ -1133,26 +1225,45 @@ def finalize_cited_report(
     for claim in body_citations:
         marker = f"[{claim['claim_id']}]"
         status = claim.get("citation_status")
-        lines.append(f"- {marker} {claim.get('claim_text')}（{status}）")
+        claim_text = _claim_text_for_language(claim, language)
+        lines.append(
+            f"- {marker} {claim_text} ({status})"
+            if language == "en"
+            else f"- {marker} {claim_text}（{status}）"
+        )
     lines.extend(["", f"### {strategy_title}", ""])
-    for agent, label in (
-        ("technical", "Technical/技术"),
-        ("fundamental", "Fundamental/基本面"),
-        ("news", "News & catalysts/消息与催化剂"),
-    ):
+    strategy_labels = (
+        (
+            ("technical", "Technical"),
+            ("fundamental", "Fundamental"),
+            ("news", "News and catalysts"),
+        )
+        if language == "en"
+        else (
+            ("technical", "Technical/技术"),
+            ("fundamental", "Fundamental/基本面"),
+            ("news", "News & catalysts/消息与催化剂"),
+        )
+    )
+    for agent, label in strategy_labels:
         markers = " ".join(
             f"[{claim['claim_id']}]"
             for claim in body_citations
             if claim.get("agent") == agent and claim.get("citation_status") == "supported"
         )
-        lines.append(f"- {label}: {markers or '无完整支持项'}")
+        empty_label = "No fully supported claims" if language == "en" else "无完整支持项"
+        lines.append(f"- {label}: {markers or empty_label}")
     lines.extend(["", f"### {source_title}", ""])
     for entry in registry:
         claim_ids = ", ".join(f"[{item}]" for item in entry.get("claim_ids") or [])
-        url = entry.get("source_url") or "URL unavailable / URL缺失"
+        url = entry.get("source_url") or (
+            "URL unavailable" if language == "en" else "URL缺失"
+        )
         lines.append(
-            f"- {entry['source_id']} — {entry.get('source_name') or '未知来源'}; "
-            f"{entry.get('source_date') or '日期缺失'}; {url}; claims: {claim_ids}"
+            f"- {entry['source_id']} — "
+            f"{entry.get('source_name') or ('Unknown source' if language == 'en' else '未知来源')}; "
+            f"{entry.get('source_date') or ('Date unavailable' if language == 'en' else '日期缺失')}; "
+            f"{url}; claims: {claim_ids}"
         )
     final_report = "\n".join(lines).strip() + "\n"
     summary = citation_summary(body_citations, final_report, registry)

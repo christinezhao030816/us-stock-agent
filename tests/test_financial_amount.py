@@ -5,6 +5,7 @@ from tools.financial_amount import (
     abbreviated_financial_amounts,
     convert_amount_scale,
     format_financial_amount_zh,
+    format_financial_amount_en,
     format_financial_per_share_zh,
     make_financial_amount,
     normalize_financial_amount_display,
@@ -12,6 +13,25 @@ from tools.financial_amount import (
 
 
 class FinancialAmountConversionTests(unittest.TestCase):
+    def test_english_report_amounts_keep_full_accounting_format(self) -> None:
+        normalized = normalize_financial_amount_display(
+            "Revenue was USD 9.18 billion and EPS was 1.43 USD.",
+            language="en",
+        )
+        self.assertIn("9,180,000,000 USD", normalized)
+        self.assertIn("1.43 USD/share", normalized)
+        self.assertEqual(
+            normalize_financial_amount_display(
+                "Net income was 250,000,000 美元.",
+                language="en",
+            ),
+            "Net income was 250,000,000 USD.",
+        )
+        self.assertEqual(
+            format_financial_amount_en(-250, "USD", "million"),
+            "(250,000,000 USD)",
+        )
+
     def test_dollar_prefix_and_url_slug_are_normalized(self) -> None:
         text = (
             "Order size was $31 Billion; "

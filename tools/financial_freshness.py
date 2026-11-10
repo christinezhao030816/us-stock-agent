@@ -495,6 +495,8 @@ def freshness_banner(
         if language == "en" and not usable
         else "这些事实不得用于正常的当前基本面结论。"
         if not usable
+        else "Non-fresh facts are present; conclusions must be qualified."
+        if language == "en" and status != "fresh"
         else "存在非fresh事实，结论必须降级并披露。"
         if status != "fresh"
         else "核心财务事实通过新鲜度检查。"
