@@ -16,6 +16,8 @@ English | [简体中文](README.zh-CN.md)
 
 ![Parallax Research dashboard overview](docs/screenshots/dashboard-light-overview.jpg)
 
+> Frozen AAPL Demo Snapshot derived from a verified Live API response. Market and filing data are shown with freshness, Agent status, citations, and evidence limitations; the snapshot is not live market data.
+
 Parallax Research is a multi-agent US equity research system that coordinates specialized Technical, Fundamental, News, and Strategy agents. It combines market data, SEC filings, and news evidence to produce structured investment research with claim-level citations, data-freshness checks, and explicit limitations.
 
 I designed, built, evaluated, and iterated on this project from a real research workflow used in a student-managed investment fund. It is an AI Product Manager portfolio project—not a claim of production readiness or perfect accuracy.
@@ -52,13 +54,19 @@ Parallax Research turns one ticker input into an evidence-aware research workflo
 
 ![Expanded Technical Agent analysis with status, limitations, and claim IDs](docs/screenshots/dashboard-agent-expanded.jpg)
 
+> Verified AAPL technical findings with the saved price date, calculation basis, and claim IDs.
+
 ### Evidence and citations
 
 ![Evidence drawer showing claims, sources, and internal provenance](docs/screenshots/dashboard-evidence-drawer.jpg)
 
+> Sanitized examples from the verified AAPL claim registry, source registry, and internal provenance.
+
 ### Responsive mobile experience
 
 ![Parallax Research mobile dashboard](docs/screenshots/dashboard-mobile.jpg)
+
+> The same frozen AAPL snapshot in the responsive mobile layout.
 
 Sample Mode is clearly labeled and never presents its packaged demonstration data as live market research. Live Mode calls the existing `/analyze` API and surfaces cold starts, timeouts, and upstream failures without fabricating progress logs.
 
