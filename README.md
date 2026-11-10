@@ -67,25 +67,27 @@ Sample Mode is clearly labeled and never presents its packaged demonstration dat
 ```mermaid
 flowchart LR
     U[User / Dashboard] --> API[FastAPI POST /analyze]
-    API --> S[Strategy Agent orchestrator]
+    API --> S[Strategy Agent: orchestration]
 
     S --> T[Technical Agent]
     S --> F[Fundamental Agent]
     S --> N[News Agent]
 
-    T --> Y[Yahoo Finance / yfinance]
-    F --> CF[SEC Company Facts]
-    F --> ED[SEC EDGAR submissions and filings]
-    N --> AN[Alpaca News / Benzinga content]
-    N --> ED
+    T <-->|query / returned market data| Y[Yahoo Finance / yfinance]
+    F <-->|query / returned company facts| CF[SEC Company Facts]
+    F <-->|query / returned filings| ED[SEC EDGAR submissions and filings]
+    N <-->|query / returned news| AN[Alpaca News / Benzinga content]
+    N <-->|query / returned filings| ED
 
-    T --> TS[Strategy synthesis]
-    F --> TS
-    N --> TS
+    T --> M[Structured specialist outputs<br/>findings, evidence, citations, limitations, status]
+    F --> M
+    N --> M
 
-    TS --> ER[Claim registry and source registry]
+    M -->|returns to the same Strategy Agent| TS[Strategy Agent: comparison and synthesis]
+
+    TS --> ER[Claim and source registry]
     TS --> IP[Internal provenance]
-    ER --> R[Final dashboard response]
+    ER --> R[Final API response / Dashboard]
     IP --> R
 ```
 
