@@ -66,32 +66,30 @@ Sample Mode is clearly labeled and never presents its packaged demonstration dat
 
 ```mermaid
 flowchart LR
-    U[User / Dashboard] --> API[FastAPI POST /analyze]
-    API --> S[Strategy Agent: orchestration]
+    U[User / Dashboard] --> API[FastAPI /analyze]
+    API --> S[Strategy Agent — Orchestration]
 
     S --> T[Technical Agent]
     S --> F[Fundamental Agent]
     S --> N[News Agent]
 
-    T <-->|query / returned market data| Y[Yahoo Finance / yfinance]
-    F <-->|query / returned company facts| CF[SEC Company Facts]
-    F <-->|query / returned filings| ED[SEC EDGAR submissions and filings]
-    N <-->|query / returned news| AN[Alpaca News / Benzinga content]
-    N <-->|query / returned filings| ED
+    T <--> Y[Yahoo Finance / yfinance]
+    F <--> SEC[SEC Company Facts and EDGAR]
+    N <--> NEWS[Alpaca, Benzinga and SEC filings]
 
-    T --> M[Structured specialist outputs<br/>findings, evidence, citations, limitations, status]
+    T --> M[Structured Agent Results<br/>Findings · Evidence · Citations · Limitations · Status]
     F --> M
     N --> M
 
-    M -->|returns to the same Strategy Agent| TS[Strategy Agent: comparison and synthesis]
+    M --> TS[Strategy Agent — Synthesis]
 
-    TS --> ER[Claim and source registry]
-    TS --> IP[Internal provenance]
-    ER --> R[Final API response / Dashboard]
+    TS --> ER[Claim and Source Registry]
+    TS --> IP[Internal Provenance]
+    ER --> R[Final API Response / Dashboard]
     IP --> R
 ```
 
-The Strategy Agent invokes the three specialist Agents as parallel tools. The specialists do not communicate directly with one another; their structured outputs return to Strategy for comparison and synthesis.
+Each specialist retrieves evidence from its assigned sources and returns structured findings to the Strategy Agent for comparison and synthesis.
 
 ## Agent responsibilities
 
