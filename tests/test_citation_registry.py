@@ -268,7 +268,7 @@ class CitationMappingTests(unittest.TestCase):
         )
         self.assertEqual(claims[0]["citation_status"], "supported")
         self.assertEqual(claims[0]["evidence_depth"], "headline_only")
-        self.assertIn("未读取完整正文", claims[0]["claim_text"])
+        self.assertIn("full article text was not available", claims[0]["claim_text"])
 
     def test_news_without_url_or_description_is_not_supported(self) -> None:
         claims = build_news_citations(

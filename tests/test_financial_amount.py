@@ -6,6 +6,7 @@ from tools.financial_amount import (
     convert_amount_scale,
     format_financial_amount_zh,
     format_financial_amount_en,
+    format_financial_per_share_en,
     format_financial_per_share_zh,
     make_financial_amount,
     normalize_financial_amount_display,
@@ -18,18 +19,18 @@ class FinancialAmountConversionTests(unittest.TestCase):
             "Revenue was USD 9.18 billion and EPS was 1.43 USD.",
             language="en",
         )
-        self.assertIn("9,180,000,000 USD", normalized)
-        self.assertIn("1.43 USD/share", normalized)
+        self.assertIn("USD 9,180,000,000", normalized)
+        self.assertIn("USD 1.43 per share", normalized)
         self.assertEqual(
             normalize_financial_amount_display(
                 "Net income was 250,000,000 美元.",
                 language="en",
             ),
-            "Net income was 250,000,000 USD.",
+            "Net income was USD 250,000,000.",
         )
         self.assertEqual(
             format_financial_amount_en(-250, "USD", "million"),
-            "(250,000,000 USD)",
+            "(USD 250,000,000)",
         )
 
     def test_dollar_prefix_and_url_slug_are_normalized(self) -> None:
@@ -184,6 +185,7 @@ class FinancialAmountStructureTests(unittest.TestCase):
                 },
                 "statement_scope": "income_statement_period",
                 "display_zh": "70,530,000,000 美元",
+                "display_en": "USD 70,530,000,000",
             },
         )
 
@@ -229,6 +231,10 @@ class FinancialAmountStructureTests(unittest.TestCase):
         )
         self.assertEqual(format_financial_amount_zh(0, "USD", "unit"), "0 美元")
         self.assertEqual(format_financial_per_share_zh(1.43, "USD"), "1.43 美元/股")
+        self.assertEqual(format_financial_amount_en(582, "TWD", "billion"), "TWD 582,000,000,000")
+        self.assertEqual(format_financial_amount_en(12.45, "JPY", "billion"), "JPY 12,450,000,000")
+        self.assertEqual(format_financial_amount_en(-250, "USD", "million"), "(USD 250,000,000)")
+        self.assertEqual(format_financial_per_share_en(1.43, "USD"), "USD 1.43 per share")
 
     def test_report_normalizer_removes_abbreviated_amounts_only(self) -> None:
         report = (

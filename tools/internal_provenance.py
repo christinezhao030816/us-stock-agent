@@ -186,14 +186,31 @@ def internal_traceability_summary(records: list[dict[str, Any]]) -> dict[str, An
     }
 
 
-def append_internal_provenance_note(report: str, records: list[dict[str, Any]]) -> str:
+def append_internal_provenance_note(
+    report: str,
+    records: list[dict[str, Any]],
+    *,
+    language: str = "en",
+) -> str:
     if not records:
         return report
-    lines = [str(report or "").rstrip(), "", "## 系统诊断与内部溯源", ""]
+    title = (
+        "System Diagnostics and Internal Provenance"
+        if language == "en"
+        else "系统诊断与内部溯源"
+    )
+    lines = [str(report or "").rstrip(), "", f"## {title}", ""]
     for item in records:
-        lines.append(
-            f"- [{item['provenance_id']}] 系统诊断 `{item['metric_name']}`："
-            f"结果={item['result']!s}; 规则={item['formula_or_rule']}; "
-            f"路径={item['provenance_path']}; deterministic=true"
-        )
+        if language == "en":
+            lines.append(
+                f"- [{item['provenance_id']}] `{item['metric_name']}`: "
+                f"result={item['result']!s}; rule={item['formula_or_rule']}; "
+                f"path={item['provenance_path']}; deterministic=true"
+            )
+        else:
+            lines.append(
+                f"- [{item['provenance_id']}] 系统诊断 `{item['metric_name']}`："
+                f"结果={item['result']!s}; 规则={item['formula_or_rule']}; "
+                f"路径={item['provenance_path']}; deterministic=true"
+            )
     return "\n".join(lines).rstrip() + "\n"

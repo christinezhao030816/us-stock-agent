@@ -28,12 +28,12 @@ CURRENCY_LABELS_ZH = {
 
 def _as_decimal(value: int | float | str | Decimal) -> Decimal:
     if isinstance(value, bool):
-        raise TypeError("金额不能是布尔值")
+        raise TypeError("A financial amount cannot be a boolean value.")
 
     try:
         return Decimal(str(value))
     except (InvalidOperation, ValueError) as error:
-        raise ValueError(f"无效金额：{value}") from error
+        raise ValueError(f"Invalid financial amount: {value}") from error
 
 
 def _validate_scale(scale: str) -> str:
@@ -42,7 +42,7 @@ def _validate_scale(scale: str) -> str:
     if normalized not in SCALE_FACTORS:
         allowed = ", ".join(SCALE_FACTORS)
         raise ValueError(
-            f"不支持的金额单位：{scale}；可用单位：{allowed}"
+            f"Unsupported amount scale: {scale}. Allowed scales: {allowed}"
         )
 
     return normalized
@@ -134,7 +134,7 @@ def format_financial_amount_en(
     display_scale = _validate_scale(target_scale or "unit")
     converted = convert_amount_scale(value, source_scale, display_scale)
     currency_code = currency.strip().upper()
-    amount = f"{_format_decimal(abs(converted))} {currency_code}"
+    amount = f"{currency_code} {_format_decimal(abs(converted))}"
     return f"({amount})" if converted < 0 else amount
 
 
@@ -146,7 +146,7 @@ def format_financial_per_share_en(
 
     decimal_value = _as_decimal(value)
     currency_code = currency.strip().upper()
-    amount = f"{_format_decimal(abs(decimal_value))} {currency_code}/share"
+    amount = f"{currency_code} {_format_decimal(abs(decimal_value))} per share"
     return f"({amount})" if decimal_value < 0 else amount
 
 
@@ -172,6 +172,12 @@ _EPS_AMOUNT = re.compile(
     r"(?P<prefix>(?:稀释后|基本|调整后)?(?:EPS|每股收益)[^。；\n]{0,45}?)"
     r"(?P<value>\(?-?[0-9][0-9,]*(?:\.[0-9]+)?\)?)\s*"
     r"(?P<currency>美元|新台币|日元|USD|TWD|JPY)(?!\s*/)",
+    re.IGNORECASE,
+)
+_FULL_AMOUNT_SUFFIX = re.compile(
+    r"(?P<open>\()?\s*(?P<value>-?[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+    r"(?P<currency>美元|美金|新台币|日元|USD|TWD|JPY)"
+    r"(?P<per_share>\s*(?:/\s*(?:股|share)|per\s+share))?\s*(?P<close>\))?",
     re.IGNORECASE,
 )
 
@@ -204,6 +210,9 @@ def normalize_financial_amount_display(
     }
 
     def replace(match: re.Match[str]) -> str:
+        raw = match.group(0)
+        leading = " " if raw[:1].isspace() else ""
+        trailing = " " if raw[-1:].isspace() else ""
         value = _as_decimal(match.group("value").replace(",", ""))
         if match.group("open") and match.group("close"):
             value = -abs(value)
@@ -213,10 +222,14 @@ def normalize_financial_amount_display(
             if language == "en"
             else format_financial_amount_zh
         )
-        return formatter(
-            value * factor,
-            currency_codes[match.group("currency").lower()],
-            "unit",
+        return (
+            leading
+            + formatter(
+                value * factor,
+                currency_codes[match.group("currency").lower()],
+                "unit",
+            )
+            + trailing
         )
 
     normalized = _ABBREVIATED_AMOUNT.sub(replace, str(text or ""))
@@ -230,18 +243,36 @@ def normalize_financial_amount_display(
         )
         if language == "en":
             return (
-                f"{match.group('prefix')}{match.group('value')} "
-                f"{currency_code}/share"
+                f"{match.group('prefix')}{currency_code} "
+                f"{match.group('value')} per share"
             )
         currency = CURRENCY_LABELS_ZH.get(currency_code, currency_code)
         return f"{match.group('prefix')}{match.group('value')} {currency}/股"
 
     normalized = _EPS_AMOUNT.sub(replace_eps, normalized)
     if language == "en":
+        def replace_full_amount(match: re.Match[str]) -> str:
+            raw = match.group(0)
+            leading = " " if raw[:1].isspace() else ""
+            trailing = " " if raw[-1:].isspace() else ""
+            value = _as_decimal(match.group("value").replace(",", ""))
+            if match.group("open") and match.group("close"):
+                value = -abs(value)
+            currency_code = currency_codes.get(
+                match.group("currency").lower(),
+                match.group("currency").upper(),
+            )
+            if match.group("per_share"):
+                display = format_financial_per_share_en(value, currency_code)
+            else:
+                display = format_financial_amount_en(value, currency_code, "unit")
+            return leading + display + trailing
+
+        normalized = _FULL_AMOUNT_SUFFIX.sub(replace_full_amount, normalized)
         normalized = (
-            normalized.replace("美元/股", "USD/share")
-            .replace("新台币/股", "TWD/share")
-            .replace("日元/股", "JPY/share")
+            normalized.replace("美元/股", "USD per share")
+            .replace("新台币/股", "TWD per share")
+            .replace("日元/股", "JPY per share")
             .replace("美元", "USD")
             .replace("新台币", "TWD")
             .replace("日元", "JPY")
@@ -306,6 +337,12 @@ def make_financial_amount(
         "period": period,
         "statement_scope": statement_scope,
         "display_zh": format_financial_amount_zh(
+            decimal_value,
+            normalized_currency,
+            normalized_scale,
+            "unit",
+        ),
+        "display_en": format_financial_amount_en(
             decimal_value,
             normalized_currency,
             normalized_scale,

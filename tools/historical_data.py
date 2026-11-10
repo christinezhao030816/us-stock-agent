@@ -15,7 +15,7 @@ api_key = os.getenv("ALPACA_API_KEY")
 secret_key = os.getenv("ALPACA_SECRET_KEY")
 
 if not api_key or not secret_key:
-    raise RuntimeError("未读取到 Alpaca API 密钥")
+    raise RuntimeError("Alpaca API credentials are not configured.")
 
 client = StockHistoricalDataClient(api_key, secret_key)
 

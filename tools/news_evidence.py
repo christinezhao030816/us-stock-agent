@@ -115,7 +115,7 @@ def scoped_news_claim_text(
     if evidence_depth == "fully_supported":
         return f"{title}: {description}" if description else title
     if evidence_depth == "headline_only":
-        return f"标题级信息，未读取完整正文：{title}"
+        return f"Headline-only evidence; full article text was not available: {title}"
     if evidence_depth == "truncated_source":
-        return f"附件内容不完整，仅确认已读取片段：{title}"
-    return f"待核实信息（正文不可用）：{title or '来源仅返回元数据'}"
+        return f"The filing attachment was incomplete. Only the retrieved excerpt was used: {title}"
+    return f"Unverified item; full text unavailable: {title or 'source metadata only'}"

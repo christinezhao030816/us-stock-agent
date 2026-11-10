@@ -8,7 +8,11 @@ from tools.financial_freshness import (
     build_filing_freshness,
     evaluate_fact_freshness,
 )
-from tools.financial_amount import format_financial_amount_zh
+from tools.financial_amount import (
+    format_financial_amount_en,
+    format_financial_amount_zh,
+    format_financial_per_share_en,
+)
 from tools.news_evidence import (
     classify_article_evidence,
     classify_filing_evidence,
@@ -20,6 +24,7 @@ VALID_CITATION_STATUSES = {"supported", "partial", "unsupported"}
 _CLAIM_MARKER = re.compile(r"\[([TFN]\d+)\]")
 _ANY_CLAIM_MARKER = re.compile(r"\[([A-Z]\d+)\]")
 _URL_PATTERN = re.compile(r"https?://[^\s<>\])]+")
+_CJK_PATTERN = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 _SOURCE_HEADING = re.compile(
     r"^#{1,3}\s+(?:\d+\.\s*)?(?:来源与证据|Sources and Evidence)\s*$",
     re.IGNORECASE,
@@ -149,12 +154,19 @@ def inherit_strategy_citations(report: str, citations: list[dict[str, Any]]) -> 
     return "\n".join(output)
 
 
-def repair_cited_financial_values(report: str, citations: list[dict[str, Any]]) -> str:
+def repair_cited_financial_values(
+    report: str,
+    citations: list[dict[str, Any]],
+    *,
+    language: str = "zh",
+) -> str:
     """Replace a mismatched cited financial display with its structured value."""
 
     by_id = {str(item.get("claim_id") or ""): item for item in citations}
     amount = re.compile(
-        r"\(?-?\d[\d,]*(?:\.\d+)?\s*(?:美元|新台币|日元|USD|TWD|JPY)(?:\s*/\s*股)?\)?",
+        r"(?:\(?\s*(?:USD|TWD|JPY)\s+-?\d[\d,]*(?:\.\d+)?(?:\s+per\s+share)?\s*\)?|"
+        r"\(?-?\d[\d,]*(?:\.\d+)?\s*(?:美元|新台币|日元|USD|TWD|JPY)"
+        r"(?:\s*/\s*(?:股|share))?\)?)",
         re.IGNORECASE,
     )
     lines: list[str] = []
@@ -216,10 +228,18 @@ def repair_cited_financial_values(report: str, citations: list[dict[str, Any]]) 
                 else "million" if "million" in unit.lower()
                 else "unit"
             )
-            expected = format_financial_amount_zh(
-                claim["value"],
-                selected["currency"],
-                scale,
+            expected = (
+                format_financial_amount_en(
+                    claim["value"],
+                    selected["currency"],
+                    scale,
+                )
+                if language == "en"
+                else format_financial_amount_zh(
+                    claim["value"],
+                    selected["currency"],
+                    scale,
+                )
             )
             if existing.group(0) != expected:
                 repaired = (
@@ -261,6 +281,30 @@ def _claim_text_for_language(
             return f"Truncated source: SEC {form} filing{suffix}"
         if depth == "unavailable":
             return f"Full text unavailable: {title}"
+    if claim.get("agent") == "fundamental":
+        value = claim.get("value")
+        unit = str(claim.get("unit") or "")
+        parts = unit.split()
+        currency = parts[0].upper() if parts else ""
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and currency in {"USD", "TWD", "JPY"}
+        ):
+            if "/share" in unit.lower() or "per share" in unit.lower():
+                display = format_financial_per_share_en(value, currency)
+            else:
+                scale = (
+                    "billion" if "billion" in unit.lower()
+                    else "million" if "million" in unit.lower()
+                    else "unit"
+                )
+                display = format_financial_amount_en(value, currency, scale)
+            company = str(
+                claim.get("company_or_ticker") or "Company"
+            ).strip()
+            metric = str(claim.get("metric_name") or "financial metric")
+            return f"{company} {metric} = {display}"
     return (
         text.replace("美元/股", "USD/share")
         .replace("新台币/股", "TWD/share")
@@ -269,6 +313,55 @@ def _claim_text_for_language(
         .replace("新台币", "TWD")
         .replace("日元", "JPY")
     )
+
+
+def _english_presentation_value(value: Any) -> Any:
+    """Remove non-English presentation text without changing evidence data.
+
+    Numeric values, dates, URLs, accessions, periods, and claim identifiers are
+    returned unchanged.  For a non-English source excerpt we retain any ASCII
+    metadata already present and otherwise disclose that the source text is not
+    reproduced in the English presentation; no translation or inference occurs.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: _english_presentation_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_english_presentation_value(item) for item in value]
+    if not isinstance(value, str) or not _CJK_PATTERN.search(value):
+        return value
+    normalized = (
+        value.replace("美元/股", "USD per share")
+        .replace("新台币/股", "TWD per share")
+        .replace("日元/股", "JPY per share")
+        .replace("美元", "USD")
+        .replace("新台币", "TWD")
+        .replace("日元", "JPY")
+    )
+    ascii_metadata = _CJK_PATTERN.sub("", normalized)
+    ascii_metadata = re.sub(r"\s+", " ", ascii_metadata).strip(" ，。：:;；、-")
+    if re.search(r"[A-Za-z0-9]", ascii_metadata):
+        return ascii_metadata
+    return "Non-English source text is not reproduced in this English report."
+
+
+def citations_for_language(
+    citations: list[dict[str, Any]],
+    language: str,
+) -> list[dict[str, Any]]:
+    """Return presentation copies without changing raw values or evidence."""
+
+    if language != "en":
+        return [dict(item) for item in citations]
+    localized: list[dict[str, Any]] = []
+    for item in citations:
+        claim = _english_presentation_value(dict(item))
+        claim["claim_text"] = _claim_text_for_language(claim, "en")
+        localized.append(claim)
+    return localized
 
 
 def _news_strategy_eligible(claim: dict[str, Any]) -> bool:
@@ -459,7 +552,7 @@ def _claim(
     citation_status: str,
 ) -> dict[str, Any]:
     if citation_status not in VALID_CITATION_STATUSES:
-        raise ValueError(f"无效引用状态：{citation_status}")
+        raise ValueError(f"Invalid citation status: {citation_status}")
 
     return {
         "claim_id": claim_id,
@@ -1061,7 +1154,7 @@ def build_agent_citations(
         )
     if agent_role == "news":
         return build_news_citations(payloads)
-    raise ValueError(f"未知 Agent：{agent_role}")
+    raise ValueError(f"Unknown Agent role: {agent_role}")
 
 
 def _valid_supported(claim: dict[str, Any]) -> bool:
@@ -1186,7 +1279,11 @@ def finalize_cited_report(
 
     cleaned = _ANY_CLAIM_MARKER.sub(repair_marker, str(report or ""))
     cleaned = inherit_strategy_citations(cleaned, citations)
-    cleaned = repair_cited_financial_values(cleaned, citations)
+    cleaned = repair_cited_financial_values(
+        cleaned,
+        citations,
+        language=language,
+    )
     cleaned = enforce_news_evidence_boundaries(
         cleaned,
         citations,

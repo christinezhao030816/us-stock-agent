@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -12,6 +13,14 @@ class InterviewDashboardMappingTests(unittest.TestCase):
 
     def test_live_request_is_english(self) -> None:
         self.assertIn("JSON.stringify({symbol:t,language:'en'})", self.html)
+
+    def test_dashboard_source_has_no_cjk_user_copy(self) -> None:
+        cjk = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
+        self.assertIsNone(cjk.search(self.html))
+
+    def test_frontend_uses_iso_currency_prefix(self) -> None:
+        self.assertIn("`USD ${pt}`", self.html)
+        self.assertNotIn("`${pt} USD`", self.html)
 
     def test_strategy_counts_inherited_registered_claims(self) -> None:
         self.assertIn("function registryIds(d)", self.html)

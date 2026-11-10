@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from tools.financial_amount import format_financial_per_share_zh, make_financial_amount
+from tools.financial_amount import (
+    format_financial_per_share_en,
+    format_financial_per_share_zh,
+    make_financial_amount,
+)
 from tools.financial_freshness import analysis_date, build_structured_freshness
 
 
@@ -208,7 +212,7 @@ def select_latest_ifrs_reporting_period(
             excluded.append(_audit_record(record, reason or "excluded"))
     if not valid:
         raise ValueError(
-            f"SEC Company Facts没有可用的ifrs-full Revenue（{currency}）"
+            f"SEC Company Facts has no usable ifrs-full Revenue in {currency}."
         )
     valid.sort(
         key=lambda item: (
@@ -465,11 +469,11 @@ def build_ifrs_fundamental_metrics(
 ) -> dict[str, Any]:
     config = IFRS_PILOT_ISSUERS.get(symbol)
     if config is None:
-        raise ValueError(f"{symbol}不在IFRS Pilot范围内")
+        raise ValueError(f"{symbol} is outside the IFRS pilot scope.")
     currency = config["reporting_currency"]
     taxonomy_facts = company_facts.get("facts", {}).get("ifrs-full")
     if not isinstance(taxonomy_facts, dict):
-        raise ValueError("SEC Company Facts没有可用的ifrs-full结构化事实")
+        raise ValueError("SEC Company Facts has no usable ifrs-full structured facts.")
     as_of = analysis_date(analysis_as_of)
     filings = latest_foreign_filings(submissions, as_of)
     latest_20f = filings.get("latest_20f")
@@ -685,6 +689,9 @@ def build_ifrs_fundamental_metrics(
         "eps_display_zh": (
             format_financial_per_share_zh(eps, currency) if eps is not None else None
         ),
+        "eps_display_en": (
+            format_financial_per_share_en(eps, currency) if eps is not None else None
+        ),
         "eps_diluted_usd_per_share": eps if currency == "USD" else None,
         "source_url": source_url,
         "source_records": sources,
@@ -704,7 +711,8 @@ def build_ifrs_fundamental_metrics(
             "aligned" if latest_20f and target.get("end") == latest_20f.get("period_end") else "historical_fallback"
         ),
         "financial_amount_display_rule": (
-            "逐字使用financial_amounts.display_zh；保留原始币种；不得换算为USD"
+            "Use financial_amounts.display_en for English output and preserve "
+            "the original reporting currency without converting to USD."
         ),
         "revenue_billion_original_currency": _billions(revenue),
         "net_income_billion_original_currency": _billions(net_income),
@@ -800,7 +808,8 @@ def build_ifrs_fundamental_metrics(
     if latest_6k and latest_6k_core_count == 0:
         summary["foreign_interim_status"] = "unknown"
         summary["foreign_interim_reason"] = (
-            "最新6-K没有进入SEC Company Facts的结构化核心事实；不得从正文或新闻猜测数字"
+            "The latest 6-K is not represented by structured core facts in SEC "
+            "Company Facts; values must not be inferred from filing text or news."
         )
         summary["current_analysis_usable"] = False
         summary["all_available_core_facts_fresh"] = False

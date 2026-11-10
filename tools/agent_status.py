@@ -98,7 +98,7 @@ def collect_tool_results(
         if payload is not None:
             payloads.setdefault(name, []).append(payload)
         else:
-            message = str(output or "工具未返回结构化结果").strip()
+            message = str(output or "The tool returned no structured result.").strip()
             errors.append(f"{name}: {message[:300]}")
 
     return payloads, errors
@@ -165,7 +165,7 @@ def evaluate_technical_status(
             "failed",
             core_data_present=False,
             missing_items=required,
-            errors=errors or ["技术工具没有返回结构化数据"],
+            errors=errors or ["The technical tool returned no structured data."],
             data_sources=[],
             source_symbols={},
         )
@@ -256,7 +256,7 @@ def evaluate_fundamental_status(
             "failed",
             core_data_present=False,
             missing_items=required,
-            errors=errors or ["基本面工具没有返回核心财务数据"],
+            errors=errors or ["The fundamental tool returned no core financial data."],
             data_sources=[],
             source_symbols=_source_symbols(payloads),
         )
@@ -371,7 +371,7 @@ def evaluate_news_status(
             "failed",
             core_data_present=False,
             missing_items=["news_query", "sec_filing_query"],
-            errors=errors or ["消息面工具没有返回结构化数据"],
+            errors=errors or ["The news tool returned no structured data."],
             data_sources=[],
             source_symbols={},
         )
@@ -585,7 +585,7 @@ def extract_top_level_statuses(
                 "failed",
                 core_data_present=False,
                 missing_items=["structured_agent_status"],
-                errors=["未取得结构化 Agent 状态"],
+                errors=["No structured Agent status was returned."],
                 data_sources=[],
                 source_symbols={},
             )
@@ -612,7 +612,7 @@ def extract_top_level_statuses(
         strategy_status,
         core_data_present=bool(report),
         missing_items=incomplete_roles,
-        errors=[] if report else ["策略报告为空"],
+        errors=[] if report else ["The Strategy report is empty."],
         data_sources=["specialist agent reports"] if report else [],
         source_symbols={},
     )
@@ -634,9 +634,9 @@ def warnings_from_statuses(
         errors = detail.get("errors") or []
         parts = [f"{role}={detail.get('status', 'failed')}"]
         if missing:
-            parts.append("缺失：" + ", ".join(map(str, missing)))
+            parts.append("missing: " + ", ".join(map(str, missing)))
         if errors:
-            parts.append("错误：" + "; ".join(map(str, errors)))
-        warnings.append("；".join(parts))
+            parts.append("errors: " + "; ".join(map(str, errors)))
+        warnings.append("; ".join(parts))
 
     return warnings

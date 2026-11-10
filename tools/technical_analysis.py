@@ -16,7 +16,7 @@ api_key = os.getenv("ALPACA_API_KEY")
 secret_key = os.getenv("ALPACA_SECRET_KEY")
 
 if not api_key or not secret_key:
-    raise RuntimeError("未读取到 Alpaca API 密钥")
+    raise RuntimeError("Alpaca API credentials are not configured.")
 
 client = StockHistoricalDataClient(api_key, secret_key)
 
@@ -31,7 +31,7 @@ request = StockBarsRequest(
 bars = client.get_stock_bars(request).df.reset_index()
 
 if bars.empty:
-    raise RuntimeError("没有获取到 AAPL 的历史行情")
+    raise RuntimeError("No historical market data was returned for AAPL.")
 
 # 排除纽约当天尚未完成的日 K。
 today_new_york = datetime.now(ZoneInfo("America/New_York")).date()
@@ -70,7 +70,7 @@ bars.loc[
 ] = 100
 
 if len(bars) < 200:
-    raise RuntimeError("历史数据不足200个交易日")
+    raise RuntimeError("At least 200 trading days are required.")
 
 latest = bars.iloc[-1]
 latest_date = latest["timestamp"].tz_convert(
