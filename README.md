@@ -14,7 +14,7 @@ English | [简体中文](README.zh-CN.md)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![Render](https://img.shields.io/badge/Deployed%20on-Render-46E3B7)](https://parallax-stock-research.onrender.com/)
 
-![Parallax Research dashboard overview](docs/screenshots/dashboard-light-overview.jpg)
+![Parallax Research verified AAPL dashboard overview](docs/screenshots/dashboard-verified-aapl-overview-v2.jpg)
 
 > Frozen AAPL Demo Snapshot derived from a verified Live API response. Market and filing data are shown with freshness, Agent status, citations, and evidence limitations; the snapshot is not live market data.
 
@@ -52,19 +52,19 @@ Parallax Research turns one ticker input into an evidence-aware research workflo
 
 ### Specialist analysis
 
-![Expanded Technical Agent analysis with status, limitations, and claim IDs](docs/screenshots/dashboard-agent-expanded.jpg)
+![Expanded Technical Agent analysis with status, limitations, and claim IDs](docs/screenshots/dashboard-verified-agent-analysis-v2.jpg)
 
 > Verified AAPL technical findings with the saved price date, calculation basis, and claim IDs.
 
 ### Evidence and citations
 
-![Evidence drawer showing claims, sources, and internal provenance](docs/screenshots/dashboard-evidence-drawer.jpg)
+![Evidence drawer showing claims, sources, and internal provenance](docs/screenshots/dashboard-verified-evidence-v2.jpg)
 
 > Sanitized examples from the verified AAPL claim registry, source registry, and internal provenance.
 
 ### Responsive mobile experience
 
-![Parallax Research mobile dashboard](docs/screenshots/dashboard-mobile.jpg)
+![Parallax Research mobile dashboard](docs/screenshots/dashboard-verified-mobile-v2.jpg)
 
 > The same frozen AAPL snapshot in the responsive mobile layout.
 
@@ -73,31 +73,30 @@ Sample Mode is clearly labeled and never presents its packaged demonstration dat
 ## Multi-agent architecture
 
 ```mermaid
-flowchart LR
-    U[User / Dashboard] --> API[FastAPI POST /analyze]
-    API --> S[Strategy Agent orchestrator]
+flowchart TD
+    U["User enters a stock ticker"] --> API["FastAPI /analyze"]
+    API --> S["Strategy Agent"]
 
-    S --> T[Technical Agent]
-    S --> F[Fundamental Agent]
-    S --> N[News Agent]
+    S -->|parallel call| T["Technical Agent"]
+    S -->|parallel call| F["Fundamental Agent"]
+    S -->|parallel call| N["News Agent"]
 
-    T --> Y[Yahoo Finance / yfinance]
-    F --> CF[SEC Company Facts]
-    F --> ED[SEC EDGAR submissions and filings]
-    N --> AN[Alpaca News / Benzinga content]
+    T --> Y["Yahoo Finance / yfinance"]
+    F --> CF["SEC Company Facts"]
+    F --> ED["SEC EDGAR filings and exhibits"]
+    N --> AN["Alpaca News / Benzinga"]
     N --> ED
 
-    T --> TS[Strategy synthesis]
-    F --> TS
-    N --> TS
+    T --> M["Specialist analysis results"]
+    F --> M
+    N --> M
 
-    TS --> ER[Claim registry and source registry]
-    TS --> IP[Internal provenance]
-    ER --> R[Final dashboard response]
-    IP --> R
+    M --> C["Confidence scoring tool"]
+    C --> R["Strategy Agent generates the consolidated report"]
+    R --> UI["Modular web presentation"]
 ```
 
-The Strategy Agent invokes the three specialist Agents as parallel tools. The specialists do not communicate directly with one another; their structured outputs return to Strategy for comparison and synthesis.
+The Strategy Agent invokes the three specialist Agents as parallel tools. The specialists do not communicate directly with one another; their structured outputs return to Strategy for comparison and synthesis. The consolidated specialist results pass through the confidence-scoring step before Strategy generates the final modular report.
 
 ## Agent responsibilities
 
