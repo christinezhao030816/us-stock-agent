@@ -5,7 +5,11 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from tools.financial_amount import format_financial_per_share_zh, make_financial_amount
+from tools.financial_amount import (
+    format_financial_per_share_en,
+    format_financial_per_share_zh,
+    make_financial_amount,
+)
 from tools.financial_freshness import (
     analysis_date,
     build_structured_freshness,
@@ -37,7 +41,7 @@ REVENUE_CONCEPTS = [
 ]
 
 if not SEC_USER_AGENT:
-    raise RuntimeError("未读取到 SEC_USER_AGENT")
+    raise RuntimeError("SEC_USER_AGENT is not configured.")
 
 
 def _get_json(url: str) -> dict:
@@ -63,7 +67,7 @@ def _get_company(symbol: str) -> dict:
         if company["ticker"].upper() == symbol:
             return company
 
-    raise ValueError(f"SEC 中找不到股票代码：{symbol}")
+    raise ValueError(f"SEC metadata does not contain ticker {symbol}.")
 
 
 def _select_latest_applicable_filing(
@@ -232,7 +236,7 @@ def _select_latest_reporting_period(
             valid.append(item)
 
     if not valid:
-        raise ValueError("未找到可用的 SEC 营业收入记录")
+        raise ValueError("No usable SEC revenue record was found.")
 
     concept_priority = {
         concept: len(REVENUE_CONCEPTS) - index
@@ -268,8 +272,8 @@ def _select_latest_reporting_period(
         "eligible_candidate_count": len(valid),
         "selected": _source_record(selected),
         "selected_reason": (
-            "最新period_end；期间长度符合表单口径；"
-            "同日候选按filed_date和concept优先级选择"
+            "Latest period_end with a duration appropriate for the filing form; "
+            "same-day candidates are ranked by filed_date and concept priority."
         ),
         "excluded_candidate_count": len(excluded),
         "excluded_candidates": sorted(
@@ -567,8 +571,8 @@ def get_fundamental_metrics(
     us_gaap = company_facts.get("facts", {}).get("us-gaap")
     if not isinstance(us_gaap, dict):
         raise ValueError(
-            "SEC Company Facts没有可用的us-gaap结构化事实；"
-            "外国发行人应使用6-K/20-F/40-F申报文本备用路径"
+            "SEC Company Facts has no usable us-gaap structured facts; "
+            "foreign issuers should use the 6-K/20-F/40-F filing-text fallback."
         )
     target, selection_audit = _select_latest_reporting_period(
         us_gaap,
@@ -1003,6 +1007,9 @@ def get_fundamental_metrics(
         "eps_display_zh": (
             format_financial_per_share_zh(eps, "USD") if eps is not None else None
         ),
+        "eps_display_en": (
+            format_financial_per_share_en(eps, "USD") if eps is not None else None
+        ),
         "source_url": source_url,
         "source_records": source_records,
         "analysis_as_of": as_of.isoformat(),
@@ -1012,8 +1019,9 @@ def get_fundamental_metrics(
         "latest_filing_selection_audit": latest_filing_audit,
         "metric_selection_audit": metric_selection_audit,
         "financial_amount_display_rule": (
-            "报告金额时逐字使用 financial_amounts 中的 "
-            "display_zh；不得改写数值或单位"
+            "Use financial_amounts.display_en for English output and "
+            "financial_amounts.display_zh for Chinese output. Never change "
+            "the value, currency, unit, or period."
         ),
         "revenue_billion_usd": _billions(revenue),
         "net_income_billion_usd": _billions(net_income),
@@ -1044,11 +1052,11 @@ def get_fundamental_metrics(
             previous_net_income,
         ),
         "cash_flow_basis": (
-            "经营现金流、资本支出和自由现金流采用"
-            "SEC财年初至报告期末累计值"
+            "Operating cash flow, capital expenditure, and free cash flow "
+            "use SEC fiscal-year-to-date values through the reporting date."
         ),
         "free_cash_flow_definition": (
-            "自由现金流等于经营现金流减资本支出"
+            "Free cash flow equals operating cash flow minus capital expenditure."
         ),
         "source": "SEC Company Facts API",
     }

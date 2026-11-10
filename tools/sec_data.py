@@ -9,7 +9,7 @@ load_dotenv()
 sec_user_agent = os.getenv("SEC_USER_AGENT")
 
 if not sec_user_agent:
-    raise RuntimeError("未读取到 SEC_USER_AGENT")
+    raise RuntimeError("SEC_USER_AGENT is not configured.")
 
 headers = {
     "User-Agent": sec_user_agent,
@@ -36,7 +36,7 @@ def get_cik(symbol: str) -> str:
         if company["ticker"].upper() == symbol:
             return str(company["cik_str"]).zfill(10)
 
-    raise ValueError(f"SEC 中没有找到股票代码：{symbol}")
+    raise ValueError(f"SEC metadata does not contain ticker {symbol}.")
 
 
 def get_company_facts(cik: str) -> dict:

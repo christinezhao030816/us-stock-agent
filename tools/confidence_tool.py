@@ -9,7 +9,7 @@ def _parse_date(value: str) -> date:
         return date.fromisoformat(cleaned)
     except ValueError as error:
         raise ValueError(
-            f"日期格式不正确：{value}，应使用YYYY-MM-DD"
+            f"Invalid date format: {value}. Use YYYY-MM-DD."
         ) from error
 
 
@@ -97,8 +97,7 @@ def calculate_confidence_score(
 
     if normalized_alignment not in allowed_alignments:
         raise ValueError(
-            "signal_alignment必须是aligned、"
-            "mixed或conflicting"
+            "signal_alignment must be aligned, mixed, or conflicting."
         )
 
     parsed_analysis_date = _parse_date(
@@ -127,8 +126,7 @@ def calculate_confidence_score(
     freshness_class = fundamental_freshness_status.strip().lower()
     if freshness_class not in {"fresh", "caution", "stale", "unknown"}:
         raise ValueError(
-            "fundamental_freshness_status必须是fresh、caution、"
-            "stale或unknown"
+            "fundamental_freshness_status must be fresh, caution, stale, or unknown."
         )
     if freshness_class == "fresh":
         fundamental_score = fundamental_metrics_present * 5
@@ -222,7 +220,7 @@ def calculate_confidence_score(
         deduction_total += 10
         deductions.append(
             {
-                "reason": "存在数据读取错误",
+                "reason": "One or more data sources returned a read error.",
                 "points": -10,
             }
         )
@@ -231,7 +229,7 @@ def calculate_confidence_score(
         deduction_total += 3
         deductions.append(
             {
-                "reason": "SEC正文被截断",
+                "reason": "SEC filing text was truncated.",
                 "points": -3,
             }
         )
@@ -247,40 +245,40 @@ def calculate_confidence_score(
     if technical_metrics_present < 3:
         score_cap = min(score_cap, 79)
         cap_reasons.append(
-            "技术面关键指标不足"
+            "Insufficient core technical indicators."
         )
 
     if fundamental_metrics_present < 4:
         score_cap = min(score_cap, 79)
         cap_reasons.append(
-            "基本面关键指标不足"
+            "Insufficient core fundamental indicators."
         )
 
     if not has_independent_high_quality_news:
         score_cap = min(score_cap, 79)
         cap_reasons.append(
-            "缺少独立高质量新闻来源"
+            "No independent high-quality news source was available."
         )
 
     if sec_text_truncated:
         score_cap = min(score_cap, 79)
         cap_reasons.append(
-            "SEC正文未完整读取"
+            "SEC filing text was not retrieved in full."
         )
 
     if has_data_read_errors:
         score_cap = min(score_cap, 79)
         cap_reasons.append(
-            "存在数据读取错误"
+            "One or more data sources returned a read error."
         )
 
     if freshness_class == "caution":
         score_cap = min(score_cap, 79)
-        cap_reasons.append("基本面数据新鲜度为caution")
+        cap_reasons.append("Fundamental freshness is caution.")
     elif freshness_class in {"stale", "unknown"}:
         score_cap = min(score_cap, 59)
         cap_reasons.append(
-            f"基本面数据新鲜度为{freshness_class}，不计基本面质量分"
+            f"Fundamental freshness is {freshness_class}; the fundamental quality score is excluded."
         )
 
     if (
@@ -289,13 +287,13 @@ def calculate_confidence_score(
     ):
         score_cap = min(score_cap, 59)
         cap_reasons.append(
-            "消息面缺少可用证据"
+            "No usable news evidence was available."
         )
 
     if technical_age_days > 7:
         score_cap = min(score_cap, 59)
         cap_reasons.append(
-            "技术面行情超过7天"
+            "Technical market data is more than seven days old."
         )
 
     final_score = min(
@@ -304,11 +302,11 @@ def calculate_confidence_score(
     )
 
     if final_score >= 80:
-        confidence_level = "高"
+        confidence_level = "High"
     elif final_score >= 60:
-        confidence_level = "中"
+        confidence_level = "Medium"
     else:
-        confidence_level = "低"
+        confidence_level = "Low"
 
     input_fields = {
         "analysis_date": analysis_date,
@@ -370,7 +368,7 @@ def calculate_confidence_score(
         "deduction_total": deduction_total,
         "cap_reasons": cap_reasons,
         "method": (
-            "固定100分评分规则，并应用数据质量上限"
+            "Fixed 100-point scoring rule with deterministic data-quality caps."
         ),
         "internal_provenance": {
             "input_fields": input_fields,

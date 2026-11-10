@@ -33,7 +33,7 @@ ALPACA_SECRET_KEY = (
 
 if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
     raise RuntimeError(
-        "未读取到 Alpaca API Key 或 Secret Key"
+        "Alpaca API credentials are not configured."
     )
 
 
@@ -87,20 +87,20 @@ def _source_quality(source: str | None) -> dict:
     if normalized in HIGH_QUALITY_SOURCES:
         return {
             "level": "high",
-            "label": "较高",
+            "label": "High",
             "score": 20,
         }
 
     if normalized in MEDIUM_QUALITY_SOURCES:
         return {
             "level": "medium",
-            "label": "中等",
+            "label": "Medium",
             "score": 12,
         }
 
     return {
         "level": "unrated",
-        "label": "未评级",
+        "label": "Unrated",
         "score": 5,
     }
 
@@ -235,7 +235,7 @@ def get_stock_news(
         headline = str(item.get("headline") or "").strip()
         summary = str(item.get("summary") or "").strip()
         url = str(item.get("url") or "").strip()
-        source = str(item.get("source") or "未知来源").strip()
+        source = str(item.get("source") or "Unknown source").strip()
 
 
         source_article_symbols = [
@@ -312,7 +312,7 @@ def get_stock_news(
                 "source_symbols": source_article_symbols,
                 "relevance_score": relevance_score,
                 "relevance_reason": (
-                    f"Alpaca 将该新闻明确关联至 {symbol}"
+                    f"Alpaca explicitly associated this article with {symbol}."
                 ),
             }
         accepted_article.update(
@@ -334,9 +334,9 @@ def get_stock_news(
     selected_articles = accepted_articles[:limit]
 
     quality_counts = {
-        "较高": 0,
-        "中等": 0,
-        "未评级": 0,
+        "High": 0,
+        "Medium": 0,
+        "Unrated": 0,
     }
 
     for article in selected_articles:
@@ -357,16 +357,16 @@ def get_stock_news(
         "rejected_article_count": rejected_count,
         "duplicate_article_count": duplicate_count,
         "selection_rules": [
-            "仅保留Alpaca明确关联至目标股票代码的新闻",
-            "删除缺少标题或链接的记录",
-            "过滤链接相同、标题相同或标题高度相似的重复新闻",
-            "优先选择相关性评分较高且发布时间较新的新闻",
-            "来源评级仅用于提示信息质量，不代表内容一定准确",
+            "Keep only articles that Alpaca associates with the target ticker.",
+            "Exclude records without a headline or URL.",
+            "Remove duplicate URLs and identical or highly similar headlines.",
+            "Prefer more relevant and more recent articles.",
+            "Source ratings describe evidence quality; they do not guarantee accuracy.",
         ],
         "source": "Alpaca News API",
         "possible_delay_minutes": 15,
         "limitations": (
-            "来源评级基于预设媒体名单；未评级不等于不可信。"
-            "新闻摘要可能不包含报道全文，重要信息仍需打开原文核实。"
+            "Source ratings use a predefined publisher list; unrated does not mean unreliable. "
+            "News summaries may omit the full article, so material details should be verified at the source."
         ),
     }

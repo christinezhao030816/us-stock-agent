@@ -16,7 +16,7 @@ load_dotenv()
 SEC_USER_AGENT = os.getenv("SEC_USER_AGENT")
 
 if not SEC_USER_AGENT:
-    raise RuntimeError("未读取到 SEC_USER_AGENT")
+    raise RuntimeError("SEC_USER_AGENT is not configured.")
 
 
 def _sec_headers() -> dict[str, str]:
@@ -67,7 +67,7 @@ def _clean_html(
 
     if truncated:
         text = text[:max_characters].rstrip()
-        text += "\n[正文因长度限制被截断]"
+        text += "\n[Text truncated at the configured character limit.]"
 
     return {
         "text": text,
@@ -86,7 +86,7 @@ def _fetch_document(
         return {
             "url": None,
             "text": None,
-            "error": "未提供文件链接",
+            "error": "No document URL was provided.",
         }
 
     try:
@@ -306,9 +306,7 @@ def get_recent_sec_filing_texts(
                     ),
                     "exhibits": exhibit_results,
                     "index_error": index_error,
-                    "source_quality": (
-                        "一手监管申报"
-                    ),
+                    "source_quality": "Primary regulatory filing",
                 }
             )
 
@@ -326,13 +324,13 @@ def get_recent_sec_filing_texts(
         "filing_count": len(filings_with_text),
         "filings": filings_with_text,
         "source": "SEC EDGAR",
-        "source_quality": "一手监管申报",
+        "source_quality": "Primary regulatory filing",
         "text_scope": (
-            "读取8-K或6-K主文件，并最多读取两个"
-            "EX-99或新闻稿类附件"
+            "Reads the primary 8-K or 6-K document and up to two "
+            "EX-99 or press-release exhibits."
         ),
         "interpretation_note": (
-            "返回内容是SEC文件正文的截取文本；"
-            "涉及金额、日期和事件时仍需通过原文链接核查"
+            "Returned content is an excerpt of the SEC filing. Amounts, dates, "
+            "and events should still be checked against the original filing URL."
         ),
     }

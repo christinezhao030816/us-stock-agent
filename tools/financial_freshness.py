@@ -28,7 +28,7 @@ def analysis_date(value: str | date | None = None) -> date:
         return date.fromisoformat(str(value).strip()[:10])
     except (TypeError, ValueError) as error:
         raise ValueError(
-            f"analysis_as_of 日期格式不正确：{value}，应为YYYY-MM-DD"
+            f"Invalid analysis_as_of date: {value}. Use YYYY-MM-DD."
         ) from error
 
 
@@ -83,39 +83,40 @@ def evaluate_fact_freshness(
     filing_age = (as_of - filed).days if filed else None
 
     status = "unknown"
-    reason = "缺少或无法解析期间结束日期"
+    reason = "The period end date is missing or invalid."
     if value is None:
-        reason = "该指标没有可用数值"
+        reason = "No value is available for this metric."
     elif end is None or filed is None:
         missing = []
         if end is None:
             missing.append("period_end")
         if filed is None:
             missing.append("filed_date")
-        reason = "缺少或无法解析日期：" + ", ".join(missing)
+        reason = "Missing or invalid dates: " + ", ".join(missing)
     elif period_age is not None and period_age < 0:
-        reason = "期间结束日期晚于分析日，事实被降级为unknown"
+        reason = "The period end is after the analysis date; freshness is unknown."
     elif filing_age is not None and filing_age < 0:
-        reason = "提交日期晚于分析日，事实被降级为unknown"
+        reason = "The filing date is after the analysis date; freshness is unknown."
     elif basis is None or threshold is None:
-        reason = f"申报类型{form or '缺失'}无法确定统一新鲜度阈值"
+        reason = f"No standard freshness threshold applies to form {form or 'missing'}."
     elif period_age <= threshold:
         status = "fresh"
         reason = (
-            f"{basis}事实距分析日{period_age}天，"
-            f"不超过{threshold}天阈值"
+            f"The {basis} fact is {period_age} days old, within the "
+            f"{threshold}-day threshold."
         )
     elif period_age <= int(threshold * CAUTION_MULTIPLIER):
         status = "caution"
         reason = (
-            f"{basis}事实距分析日{period_age}天，超过{threshold}天"
-            f"fresh阈值但未超过{int(threshold * CAUTION_MULTIPLIER)}天"
+            f"The {basis} fact is {period_age} days old, above the "
+            f"{threshold}-day fresh threshold but within "
+            f"{int(threshold * CAUTION_MULTIPLIER)} days."
         )
     else:
         status = "stale"
         reason = (
-            f"{basis}事实距分析日{period_age}天，超过"
-            f"{int(threshold * CAUTION_MULTIPLIER)}天stale界限"
+            f"The {basis} fact is {period_age} days old, beyond the "
+            f"{int(threshold * CAUTION_MULTIPLIER)}-day stale boundary."
         )
 
     return {
@@ -250,21 +251,21 @@ def apply_latest_period_alignment(
     if selected is None or latest is None:
         alignment = "unknown"
         alignment_reason = (
-            "缺少系统选中期间或SEC最新适用申报期间，无法验证相对期间一致性"
+            "The selected period or latest applicable SEC filing period is missing; alignment is unknown."
         )
     elif lag_days == 0:
         alignment = "aligned"
-        alignment_reason = "系统选中期间与SEC最新适用申报期间一致"
+        alignment_reason = "The selected period matches the latest applicable SEC filing period."
     elif lag_days > 0:
         alignment = "historical_fallback"
         alignment_reason = (
-            f"SEC已有更新期间{latest_end_value}，系统仅取得"
-            f"{selected_period_end}，落后{lag_days}天"
+            f"SEC has a newer period ending {latest_end_value}; the selected "
+            f"period ends {selected_period_end}, a lag of {lag_days} days."
         )
     else:
         alignment = "unknown"
         alignment_reason = (
-            "系统选中期间晚于SEC submissions中的最新适用期间，元数据不一致"
+            "The selected period is later than the latest applicable SEC submissions period; metadata is inconsistent."
         )
 
     for fact in facts:
@@ -278,7 +279,7 @@ def apply_latest_period_alignment(
             fact["freshness_status"] = "stale"
             fact["freshness_reason"] = (
                 f"{fact.get('age_freshness_reason')}; {alignment_reason}; "
-                "该值仅可作为historical_fallback"
+                "This value is historical fallback only."
             )
         elif alignment == "unknown":
             fact["freshness_status"] = "unknown"
@@ -382,7 +383,7 @@ def build_filing_freshness(
             "period_lag_days": None,
             "latest_period_alignment_status": "unknown",
             "latest_period_alignment_reason": (
-                "外国发行人备用申报文本未形成结构化核心财务期间映射"
+                "Foreign-issuer filing text did not produce a structured core financial-period mapping."
             ),
             "historical_fallback": False,
         }

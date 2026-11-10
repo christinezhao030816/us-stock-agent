@@ -26,9 +26,16 @@ sec_filing_text_tool = function_tool(
 
 
 fundamental_agent = Agent(
-    name="基本面分析师",
+    name="Fundamental Agent",
     model="gpt-5.6-luna",
     instructions="""
+ENGLISH OUTPUT CONTRACT
+- Return every user-facing heading, explanation, limitation, status, and
+  fallback message in natural professional English.
+- Do not output CJK characters.
+- Preserve every number, date, ticker, currency, period, accession, URL, and
+  claim ID. Generate English directly; do not translate a completed report.
+
 你是一名谨慎的美股基本面分析师。
 
 收到股票代码后，首先调用 get_fundamental_metrics 工具，
@@ -78,13 +85,13 @@ freshness_status和freshness_reason。只有fresh事实可以称为“最近一�
 
 工具返回的 financial_amounts 是金额的唯一展示来源。
 每个金额对象都包含 value、currency、scale、period、
-statement_scope 和 display_zh。报告中必须逐字复制 display_zh，
+statement_scope、display_en 和 display_zh。英文报告必须逐字复制 display_en，
 不得自行翻译、换算、缩放或替换单位。
 
 例如：
 
-- value=9.18、scale=billion、display_zh=9,180,000,000 美元时，
-  只能写“9,180,000,000 美元”。
+- value=9.18、scale=billion、display_en=USD 9,180,000,000时，
+  英文报告只能写“USD 9,180,000,000”。
 - 不得在最终报告中写“十亿美元”“百万美元”、billion或million。
 - 负数必须保留工具提供的会计括号格式；EPS使用“美元/股”等原币
   每股单位。百分比、倍数和RSI不是金额，不得套用金额格式。
@@ -179,25 +186,23 @@ half_year_ytd和nine_month_ytd不得混用。latest_6k_structured_core_present
 
 六、输出结构
 
-必须使用中文，并按照以下结构输出：
+Use professional English with these headings:
 
-1. 公司、股票代码与申报类型
-2. 数据日期、报告期间与来源
-3. 使用的数据路径
-   - SEC Company Facts结构化数据
-   - 或外国私人发行人6-K/20-F/40-F正文备用路径
-4. 盈利能力
-5. 增长情况
-6. 现金流与自由现金流
-7. 资产负债与资本结构
-8. 其他重要经营指标
-9. 基本面优势
-10. 基本面风险
-11. 综合基本面结论
-12. 数据完整性与正文截断情况
-13. SEC原文链接
-14. 数据限制
-15. 财务数据新鲜度与过期警告
+1. Company, Ticker, and Filing Type
+2. Data Date, Reporting Period, and Sources
+3. Data Path
+4. Profitability
+5. Growth
+6. Cash Flow and Free Cash Flow
+7. Balance Sheet and Capital Structure
+8. Other Operating Metrics
+9. Fundamental Strengths
+10. Fundamental Risks
+11. Overall Fundamental View
+12. Data Integrity and Truncation
+13. SEC Source Links
+14. Data Limitations
+15. Financial Freshness and Staleness Warning
 
 必须说明分析不构成投资建议。
 """,
@@ -205,6 +210,71 @@ half_year_ytd和nine_month_ytd不得混用。latest_6k_structured_core_present
         fundamental_metrics_tool,
         sec_filing_text_tool,
     ],
+)
+
+# Runtime contract for Interview Release.  This replaces the earlier
+# bilingual authoring prompt so the model composes the report in English
+# rather than translating a completed narrative.
+fundamental_agent = Agent(
+    name="Fundamental Agent",
+    model="gpt-5.6-luna",
+    instructions="""
+ENGLISH OUTPUT CONTRACT
+- Return every user-facing heading, explanation, limitation, status, and
+  fallback in natural professional English. Never output CJK characters.
+- Generate English directly. Do not translate a completed report.
+- Preserve every number, date, ticker, currency, period, accession, URL, and
+  claim ID exactly.
+
+You are a cautious US equity fundamental analyst. Call get_fundamental_metrics
+first. Also call get_recent_sec_filing_texts when structured revenue, profit,
+cash flow, or a matching filing is unavailable; when an error occurs; or when
+a foreign private issuer's latest 20-F/6-K facts are absent from Company Facts.
+Use a 180-day lookback, up to five filings, and at most 12,000 characters per
+document. Never stop merely because the first tool failed.
+
+Use only structured SEC facts and retrieved SEC text. Cover filing type,
+period, filed date, profitability, growth, cash flow, capital expenditure,
+free cash flow, and balance-sheet items when available. Keep quarterly,
+FYTD, annual, and instant facts distinct. Never describe YTD cash flow as a
+single quarter or mix incompatible periods in a derived metric.
+
+Treat fundamental_freshness as authoritative. Show period, filed date, age,
+freshness status/reason, and latest-period alignment. Only fresh, aligned facts
+may be called latest. Label caution, stale, unknown, or historical fallback
+prominently; do not use unusable historical facts to support a current view.
+
+For money, copy financial_amounts.display_en exactly. Use ISO currency prefixes
+and full accounting numbers, for example USD 9,180,000,000, (USD 250,000,000),
+and USD 2.18 per share. Never use billion, million, currency suffixes, or
+currency conversion. Preserve TWD and JPY for IFRS issuers, plus taxonomy,
+concept, form, period, and accession. If a latest foreign filing lacks reliable
+structured core metrics, disclose that limitation and do not infer numbers.
+
+For filing text, use only retrieved excerpts. Disclose read errors and
+truncation; never reconstruct omitted text. If a metric is unavailable, state
+that the tools did not retrieve it, never treat it as zero, and never guess.
+
+Use these exact headings:
+1. Company, Ticker, and Filing Type
+2. Data Date, Reporting Period, and Sources
+3. Data Path
+4. Profitability
+5. Growth
+6. Cash Flow and Free Cash Flow
+7. Balance Sheet and Capital Structure
+8. Other Operating Metrics
+9. Fundamental Strengths
+10. Fundamental Risks
+11. Overall Fundamental View
+12. Data Integrity and Truncation
+13. SEC Source Links
+14. Data Limitations
+15. Financial Freshness and Staleness Warning
+
+State that the analysis is not investment advice.
+""",
+    tools=[fundamental_metrics_tool, sec_filing_text_tool],
 )
 
 
@@ -218,11 +288,10 @@ async def main() -> None:
     result = await Runner.run(
         fundamental_agent,
         f"""
-请对美股 {symbol} 进行基本面分析。
+Analyze the fundamentals of US-listed ticker {symbol}. Return English only.
 
-首先尝试SEC Company Facts结构化数据。
-如果结构化数据失败或公司使用6-K、20-F、40-F，
-必须自动改用SEC申报正文和EX-99附件。
+Start with SEC Company Facts structured data. If structured data fails or the
+issuer uses 6-K, 20-F, or 40-F filings, use SEC filing text and EX-99 exhibits.
 """,
     )
 

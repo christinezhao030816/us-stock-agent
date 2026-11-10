@@ -23,7 +23,7 @@ SEC_TICKERS_URL = (
 SEC_USER_AGENT = os.getenv("SEC_USER_AGENT")
 
 if not SEC_USER_AGENT:
-    raise RuntimeError("未读取到 SEC_USER_AGENT")
+    raise RuntimeError("SEC_USER_AGENT is not configured.")
 
 
 ITEM_DESCRIPTIONS = {
@@ -77,7 +77,7 @@ def _get_company(symbol: str) -> dict:
         if str(company.get("ticker", "")).upper() == symbol:
             return company
 
-    raise ValueError(f"SEC中找不到股票代码：{symbol}")
+    raise ValueError(f"SEC metadata does not contain ticker {symbol}.")
 
 
 def _value_at(

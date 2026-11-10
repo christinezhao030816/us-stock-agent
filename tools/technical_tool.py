@@ -166,7 +166,7 @@ def _normalize_history(
 
     if missing_columns:
         raise ValueError(
-            f"行情数据缺少字段：{sorted(missing_columns)}"
+            f"Market data is missing required columns: {sorted(missing_columns)}"
         )
 
     normalized = history.copy()
@@ -225,13 +225,13 @@ def calculate_technical_metrics_from_history(
 
     if history.empty:
         raise ValueError(
-            f"未找到 {canonical_symbol} 的有效历史行情数据"
+            f"No valid historical market data was found for {canonical_symbol}."
         )
 
     if len(history) < 60:
         raise ValueError(
-            f"{canonical_symbol} 的有效交易日不足，"
-            "无法进行技术分析（至少需要60个交易日）"
+            f"{canonical_symbol} has insufficient valid trading days; "
+            "technical analysis requires at least 60 trading days."
         )
 
     close = history["Close"].astype(float)
@@ -278,36 +278,36 @@ def calculate_technical_metrics_from_history(
     low_52_week = float(recent_252["Low"].min())
 
     rounded_volume_ratio = _round_value(volume_ratio_20)
-    volume_signal = "数据不足"
+    volume_signal = "Insufficient data"
 
     if rounded_volume_ratio is not None:
         if rounded_volume_ratio >= 1.5:
-            volume_signal = "明显放量"
+            volume_signal = "Materially above-average volume"
         elif rounded_volume_ratio >= 1.1:
-            volume_signal = "温和放量"
+            volume_signal = "Moderately above-average volume"
         elif rounded_volume_ratio <= 0.7:
-            volume_signal = "明显缩量"
+            volume_signal = "Materially below-average volume"
         else:
-            volume_signal = "成交量接近20日均量"
+            volume_signal = "Volume near the 20-day average"
 
-    trend_signal = "中性"
+    trend_signal = "Neutral"
 
     if (
         sma200 is not None
         and current_price > sma20 > sma50 > sma200
     ):
-        trend_signal = "多头排列"
+        trend_signal = "Bullish moving-average alignment"
     elif (
         sma200 is not None
         and current_price < sma20 < sma50 < sma200
     ):
-        trend_signal = "空头排列"
+        trend_signal = "Bearish moving-average alignment"
     elif current_price > sma20 and current_price > sma50:
-        trend_signal = "价格位于短中期均线上方"
+        trend_signal = "Price above short- and medium-term averages"
     elif current_price < sma20 and current_price < sma50:
-        trend_signal = "价格位于短中期均线下方"
+        trend_signal = "Price below short- and medium-term averages"
     else:
-        trend_signal = "短中期趋势分化"
+        trend_signal = "Mixed short- and medium-term trend"
 
     metrics = {
         "symbol": canonical_symbol,
@@ -351,14 +351,16 @@ def calculate_technical_metrics_from_history(
         ),
         "trend_signal": trend_signal,
         "support_resistance_method": (
-            "对按日期升序排列、剔除Close为空后的同一份日线数据，"
-            "分别取最近20和60个交易日Low最小值为支撑、"
-            "High最大值为阻力；不保证价格在该位置反转"
+            "Using the same daily series sorted by date after removing rows "
+            "with missing Close values, support is the minimum Low and "
+            "resistance is the maximum High over the latest 20 and 60 "
+            "trading days. These levels do not guarantee a reversal."
         ),
         "price_source": PRICE_SOURCE,
         "calculation_note": (
-            "全部指标由technical evidence文件中的同一份"
-            "未复权日线行情机械计算，LLM不参与数值计算"
+            "All indicators are calculated deterministically from the same "
+            "unadjusted daily series saved in the technical evidence file; "
+            "the LLM does not calculate the values."
         ),
     }
 
@@ -784,7 +786,7 @@ def get_technical_metrics(symbol: str) -> dict[str, Any]:
 
     if history.empty:
         raise ValueError(
-            f"未找到 {canonical_symbol} 的历史行情数据"
+            f"No historical market data was found for {canonical_symbol}."
         )
 
     metrics, technical_evidence = (

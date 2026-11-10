@@ -30,13 +30,17 @@ from tools.agent_status import (
     extract_top_level_technical_evidence,
     warnings_from_statuses,
 )
-from tools.citation_registry import finalize_cited_report
+from tools.citation_registry import (
+    citations_for_language,
+    finalize_cited_report,
+)
 from tools.financial_amount import normalize_financial_amount_display
 from tools.financial_freshness import freshness_banner
 from tools.internal_provenance import (
     build_internal_provenance,
     internal_traceability_summary,
 )
+from tools.output_language import assert_english_output_contract
 
 
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +56,7 @@ analysis_slots = asyncio.Semaphore(
 request_history: dict[str, deque[float]] = defaultdict(deque)
 
 app = FastAPI(
-    title="美股多 Agent 分析系统",
+    title="Parallax Research Multi-Agent Equity Intelligence",
     version="1.0.0",
 )
 
@@ -73,13 +77,13 @@ class AnalysisRequest(BaseModel):
         symbol = value.strip().upper()
 
         if not symbol:
-            raise ValueError("股票代码不能为空")
+            raise ValueError("Ticker symbol is required.")
 
         if not symbol.replace(".", "").replace("-", "").isalnum():
-            raise ValueError("股票代码格式不正确")
+            raise ValueError("Ticker symbol format is invalid.")
 
         if len(symbol) > 10:
-            raise ValueError("股票代码过长")
+            raise ValueError("Ticker symbol is too long.")
 
         return symbol
 
@@ -124,11 +128,30 @@ async def analyze_stock(
     client_ip: str | None = None,
 ) -> AnalysisResponse:
     symbol = request.symbol
-    output_language = (
-        "English" if request.language == "en" else "简体中文"
-    )
+    if request.language == "en":
+        prompt = f"""
+Analyze US-listed ticker {symbol}.
 
-    prompt = f"""
+ENGLISH OUTPUT CONTRACT
+- Call the Technical, Fundamental, and News tools and instruct each one to
+  return professional English only.
+- Return every user-facing heading, narrative, status explanation, freshness
+  warning, evidence limitation, and fallback message in English.
+- Do not output CJK characters.
+- Preserve every number, date, ticker, currency, period, accession, URL, and
+  [Tn]/[Fn]/[Nn] claim ID exactly.
+- Generate English directly. Do not translate a completed report afterward.
+- Use complete accounting amounts such as USD 127,577,000,000, JPY
+  1,141,600,000,000, TWD 2,894,308,000,000, and USD 2.18 per share.
+- Never convert currencies or abbreviate amounts as billion or million.
+
+Compare the three specialist results and provide Technical Analysis,
+Fundamental Analysis, News Analysis, Bull Factors, Bear Factors and Risks,
+Catalysts and Watch Items, Overall Judgment, Data Limitations, a disclaimer,
+and Sources and Evidence. Do not fabricate data. This is not investment advice.
+"""
+    else:
+        prompt = f"""
 请对美股 {symbol} 进行完整分析。
 
 必须调用以下三个分析工具：
@@ -150,7 +173,7 @@ async def analyze_stock(
 
 不得虚构数据，并明确说明这不是投资建议。
 
-最终综合报告必须使用{output_language}。股票代码、公司名、
+最终综合报告必须使用简体中文。股票代码、公司名、
 数据源名称和财务单位须保持准确，不得因翻译改变数字、日期、
 币种、链接或专有名词。
 """
@@ -182,19 +205,16 @@ async def analyze_stock(
         technical_evidence = extract_top_level_technical_evidence(
             result
         )
-        citations = extract_top_level_citations(result)
+        raw_citations = extract_top_level_citations(result)
+        citations = citations_for_language(
+            raw_citations,
+            request.language,
+        )
         fundamental_freshness = (
             extract_top_level_fundamental_freshness(result)
         )
         fundamental_evidence = extract_top_level_fundamental_evidence(
             result
-        )
-        internal_provenance = build_internal_provenance(
-            result,
-            agent_statuses=agent_statuses,
-            fundamental_freshness=fundamental_freshness,
-            technical_evidence=technical_evidence,
-            citations=citations,
         )
         report, source_registry, citation_summary = (
             finalize_cited_report(
@@ -224,8 +244,15 @@ async def analyze_stock(
             and claim.get("freshness_status")
             in {"caution", "stale", "unknown"}
         ]
+        internal_provenance = build_internal_provenance(
+            result,
+            agent_statuses=agent_statuses,
+            fundamental_freshness=fundamental_freshness,
+            technical_evidence=technical_evidence,
+            citations=citations,
+        )
 
-        return AnalysisResponse(
+        response = AnalysisResponse(
             symbol=symbol,
             report=report,
             agent_statuses=agent_statuses,
@@ -243,13 +270,31 @@ async def analyze_stock(
                 internal_provenance
             ),
         )
+        if request.language == "en":
+            public_fields = response.model_dump(
+                include={
+                    "report",
+                    "agent_statuses",
+                    "warnings",
+                    "citations",
+                    "source_registry",
+                    "freshness_summary",
+                    "internal_provenance",
+                }
+            )
+            assert_english_output_contract(public_fields)
+        return response
 
     except Exception:
-        logger.exception("分析 %s 时发生错误", symbol)
+        logger.exception("Analysis failed for %s", symbol)
 
         raise HTTPException(
             status_code=500,
-            detail="分析失败，请查看终端中的错误信息",
+            detail=(
+                "Analysis failed. Review the server logs for details."
+                if request.language == "en"
+                else "分析失败，请查看终端中的错误信息"
+            ),
         )
 
 
